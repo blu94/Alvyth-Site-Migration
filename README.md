@@ -32,25 +32,65 @@ by database id — so importing the same bundle twice updates rather than duplic
   A migration must carry exactly those, so this is a different contract, not a fork.
 - **It is not multi-site.** Ovynt hosts one site per install. "Which website" means which install
   you carry the bundle to.
-- **It carries no secrets.** Gateway keys, the SMTP password and the AI key never enter a bundle.
-  There is a test that greps a produced bundle for them and fails if any appears.
+- **It carries no secrets by default.** Gateway keys, the SMTP password and the AI key never enter
+  a bundle unless you switch them on, and then only sealed under a passphrase you choose. There is
+  a test that greps a produced bundle for them and fails if any appears — and it runs with
+  credentials switched **on** as well as off, because a bundle carrying both an encrypted block and
+  a readable copy would be worse than one carrying neither.
 
 ---
 
-## What travels today
+## What travels
+
+Content and configuration, ticked by default:
 
 | Resource | Matched on |
 |---|---|
+| Categories (and collections, which are the same rows) | `slug` |
+| Tags | `slug` |
+| Media — rows, and the files themselves | content hash |
 | Products, including their variants | `sku` |
+| Pages, with their whole builder tree and SEO block | `slug` |
+| Posts | `slug` |
+| Forms — the definitions, never the submissions | `slug` |
+| Email templates | `data->key` |
+| Shipping zones, carrying their methods | `slug` |
+| Tax zones, carrying their rates | `slug` |
+| Discounts | `code` |
+| Settings — application, localization, email branding, e-invoice profile | group |
 
-That is the whole list in this release, and the narrowness is deliberate. The risk in a tool like
-this is not breadth — it is identity, the id map and the rewrite pass. Adding twenty resource
-drivers before those hold means finding a defect twenty drivers deep. The remaining resources land
-in the order pages, categories, tags, assets, settings and the rest, behind the same seam.
+Records about people, ticked by nobody unless they mean it:
 
-**A product with no SKU cannot travel.** `products.sku` is nullable, so a catalogue that never set
-one has nothing to match on. Those rows are **reported in the preview and refused**, rather than
-given an invented key — inventing one is how the same product lands twice.
+| Resource | Matched on |
+|---|---|
+| Customer and staff accounts | `email` |
+
+**Nothing is matched by database id**, ever. An id means nothing outside the database that issued
+it, so honouring one would overwrite a stranger.
+
+Two consequences worth knowing:
+
+- **A product with no SKU cannot travel.** `products.sku` is nullable, so a catalogue that never
+  set one has nothing to match on. Those rows are reported in the preview and skipped, rather than
+  given an invented key — inventing one is how the same product lands twice.
+- **Media is matched on content hash, not path.** Two installs store the same photograph under
+  different paths, so matching on path would re-import every image on every migration. Candidates
+  are narrowed by size and format first, so nothing hashes a whole library to find one match.
+
+### What is deliberately not here
+
+**Orders and invoices.** An imported invoice carries the source's numbering, and the destination
+computes its next number from its own rows — so the two collide silently until an accountant finds
+two invoices sharing a number. Choosing between renumbering (which breaks the copy the customer
+already has) and preserving (which breaks the sequence) is a product decision, and orders are
+meaningless without the invoices and items attached to them.
+
+**Comments and leads.** Both point at what they are about — a post, a product, a form — through ids
+that must be remapped *at write time*, and a driver has no access to the run's id map. That seam is
+worth widening deliberately rather than as a side effect.
+
+**Themes, plugins, the activity log, sessions, tokens, revisions, jobs.** Install-local by meaning,
+or packages with their own installers and licences.
 
 ---
 
@@ -168,10 +208,18 @@ The tests use `DatabaseTransactions`, never `RefreshDatabase`.
 |---|---|
 | `RoundTripTest` | A bundle restores what was deleted · a second import writes nothing · an interrupted run finishes where an uninterrupted one does |
 | `CanonicalFormTest` | Two spellings of one record hash alike, and a real change does not |
+| `DriverSymmetryTest` | **Every** driver describes a record identically whether eager-loaded or bare · every driver is gated by a permission that exists · the import order is a valid dependency graph |
 | `PermissionIsolationTest` | Migrating is not permission to overwrite products |
-| `NoSecretsInBundleTest` | No configured secret appears in a produced bundle |
+| `NoSecretsInBundleTest` | No configured secret appears in a bundle — with credentials off *and* on |
+| `CredentialVaultTest` | The right passphrase reproduces every secret; a wrong one and a tampered block both fail closed |
+| `SettingsExclusionTest` | Payment, mail and AI settings never travel; the e-invoice profile does, without its credential keys |
+| `UserImportTest` | No password or second factor leaves the site; imported accounts cannot sign in and carry no role |
 | `BundleFormatTest` | A newer bundle is refused, a corrupt one is caught, a damaged line does not lose the rest |
 | `PackageManifestTest` | `api` plural, `routeBase` singular, every `rules` an array, no tables |
+
+`DriverSymmetryTest` earns its place: `PageDriver` once returned an empty builder tree for a
+lazily-loaded page, so **every page compared as changed and was rewritten on every migration**,
+silently. The canonical form was blameless and every other test passed.
 
 ---
 

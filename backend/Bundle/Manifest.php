@@ -49,8 +49,11 @@ class Manifest
      *
      * @param  array<string,int>  $contents  resource key => record count
      */
-    public static function build(array $contents, bool $includeMedia = false, bool $hasCredentials = false): self
-    {
+    public static function build(
+        array $contents,
+        bool $includeMedia = false,
+        array $credentials = [],
+    ): self {
         return new self([
             'format'     => self::FORMAT,
             'created_at' => now()->toIso8601String(),
@@ -61,7 +64,15 @@ class Manifest
             ],
             'contents'        => $contents,
             'include_media'   => $includeMedia,
-            'has_credentials' => $hasCredentials,
+
+            // `has_credentials` lets the destination say credentials are present *before* the
+            // operator commits, rather than after the import has already written.
+            'has_credentials' => $credentials !== [],
+
+            // The salt, cipher and iteration count. **Never the passphrase** — it is not stored
+            // here, on the run, in the log or in the activity trail, because the whole security
+            // model is that the file and the passphrase travel separately.
+            'credentials' => $credentials === [] ? null : $credentials,
         ]);
     }
 
@@ -118,6 +129,22 @@ class Manifest
     public function hasCredentials(): bool
     {
         return (bool) ($this->data['has_credentials'] ?? false);
+    }
+
+    /**
+     * How the credential block was sealed — salt, cipher, iterations, and which groups it holds.
+     *
+     * @return array<string,mixed>
+     */
+    public function credentials(): array
+    {
+        return (array) ($this->data['credentials'] ?? []);
+    }
+
+    /** @return array<int,string> */
+    public function credentialGroups(): array
+    {
+        return array_values(array_filter(array_map('strval', (array) ($this->credentials()['groups'] ?? []))));
     }
 
     /**

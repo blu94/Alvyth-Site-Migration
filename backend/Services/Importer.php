@@ -6,6 +6,7 @@ use App\Services\Seo\SitemapCache;
 use Illuminate\Database\Eloquent\Model;
 use Plugin\SiteMigration\Backend\Bundle\BundleContext;
 use Plugin\SiteMigration\Backend\Bundle\BundleReader;
+use Plugin\SiteMigration\Backend\Bundle\CredentialVault;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Plugin\SiteMigration\Backend\Resources\ResourceDriver;
 use Plugin\SiteMigration\Backend\Resources\SkipRecord;
@@ -355,7 +356,10 @@ class Importer
             fn (string $key) => $this->drivers->has($key) && $reader->has($key)
         ));
 
-        $wanted = array_values(array_filter((array) ($run->selection()['modules'] ?? [])));
+        $wanted = array_values(array_filter(array_merge(
+            (array) ($run->selection()['modules'] ?? []),
+            (array) ($run->selection()['records'] ?? [])
+        )));
 
         if ($wanted !== []) {
             $available = array_values(array_intersect($available, $wanted));
@@ -434,6 +438,8 @@ class Importer
         // taggable, so `Cache::tags()->flush()` would throw on exactly the hosting this targets.
         app(SitemapCache::class)->bust();
 
+        $this->applyCredentials($run, $reader);
+
         $tally = $run->tally();
 
         $run->set('status', Run::STATUS_COMPLETED)
@@ -454,6 +460,65 @@ class Importer
                 number_format($tally['failed'])
             ),
         ];
+    }
+
+    /**
+     * Open and write the encrypted credentials, if the bundle has any and a passphrase was given.
+     *
+     * **Applied last, deliberately.** A passphrase problem then costs nothing that already
+     * succeeded — the content import is finished and committed before this is attempted. A wrong
+     * passphrase fails GCM authentication, credentials are **skipped**, the screen says so plainly,
+     * and the rest of the run still reports success. Never a half-written or nulled secret.
+     */
+    private function applyCredentials(Run $run, BundleReader $reader): void
+    {
+        $manifest = $reader->manifest();
+
+        if (! $manifest->hasCredentials()) {
+            return;
+        }
+
+        $passphrase = (string) $run->passphrase();
+
+        if ($passphrase === '') {
+            $run->set('credentials', ['applied' => [], 'skipped_reason' => 'no passphrase given'])
+                ->addErrors(
+                    'This bundle carries encrypted credentials, which were left alone because no '
+                    . 'passphrase was entered. Everything else imported normally. Enter the '
+                    . 'passphrase and press Import again to apply just those.'
+                );
+
+            return;
+        }
+
+        try {
+            $vault = app(CredentialVault::class);
+
+            $groups = $vault->open(
+                $reader->extractedPath() . '/' . CredentialVault::FILENAME,
+                $manifest->credentials(),
+                $passphrase
+            );
+
+            $applied = $vault->apply($groups);
+
+            // The **outcome only** — which groups were written. Never a value, and never the
+            // passphrase, which is not stored anywhere at any point.
+            $run->set('credentials', ['applied' => $applied]);
+
+            if ($applied !== []) {
+                $run->addErrors(sprintf(
+                    'Credentials applied: %s. Check them on the settings screens before trusting '
+                    . 'them — copying live gateway keys to a second site means that site can charge '
+                    . 'real cards.',
+                    implode(', ', $applied)
+                ));
+            }
+        } catch (Throwable $e) {
+            // Fails closed: this install's existing credentials are untouched rather than nulled.
+            $run->set('credentials', ['applied' => [], 'skipped_reason' => 'passphrase or block rejected'])
+                ->addErrors($e->getMessage());
+        }
     }
 
     /** @return array<string,mixed> */

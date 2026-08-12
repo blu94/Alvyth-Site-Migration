@@ -65,6 +65,26 @@
             "rules": ["nullable", "array"]
           },
           {
+            "ui": { "type": "field", "cols": 12, "multiple": true, "chips": true, "closableChips": true },
+            "key": "records",
+            "type": "autocomplete",
+            "label": "Records about people",
+            "placeholder": "Nothing — recommended",
+            "multiple": true,
+            "chips": true,
+            "options": { "master": "record_options", "record_options": [] },
+            "hint": "Only what the bundle actually carries can be brought in. Imported accounts cannot sign in until each person resets their own password, and they arrive with no role — grant those yourself, deliberately.",
+            "rules": ["nullable", "array"]
+          },
+          {
+            "ui": { "type": "field", "cols": { "cols": 12, "md": 6 } },
+            "key": "passphrase",
+            "type": "password",
+            "label": "Passphrase, if the bundle carries credentials",
+            "placeholder": "Leave empty unless it does",
+            "hint": "Read bundle will tell you whether this one has any. Credentials are applied last, so a wrong passphrase costs nothing that already imported — they are skipped, you are told, and this site's existing keys are left exactly as they were."
+          },
+          {
             "ui": { "type": "field", "cols": { "cols": 12, "md": 6 } },
             "key": "on_conflict",
             "type": "select",

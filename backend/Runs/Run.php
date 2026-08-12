@@ -54,12 +54,41 @@ class Run
      */
     public const MAX_ERRORS = 50;
 
+    /**
+     * The operator's passphrase, for this request only.
+     *
+     * **Deliberately not part of `$state`**, which is what {@see save()} writes to disk. It is
+     * held in memory for the length of one press and then gone: never in `state.json`, never in
+     * the log, never in the activity trail. The entire security model of the encrypted block is
+     * that the bundle and the passphrase travel by different routes, and a copy sitting in a file
+     * beside the bundle would quietly undo that.
+     *
+     * The seal happens on the press that *finishes* the walk, so on a long export the passphrase
+     * has to be present on that press — which it is, because the screen posts its whole form every
+     * time and the field still holds it. An operator who navigates away and comes back mid-run
+     * finds it empty, and the run says plainly that credentials were left out rather than
+     * pretending they travelled.
+     */
+    private string $passphrase = '';
+
     /** @param array<string,mixed> $state */
     private function __construct(
         public readonly string $id,
         public readonly string $directory,
         private array $state,
     ) {
+    }
+
+    public function withPassphrase(string $passphrase): static
+    {
+        $this->passphrase = $passphrase;
+
+        return $this;
+    }
+
+    public function passphrase(): string
+    {
+        return $this->passphrase;
     }
 
     /**

@@ -57,16 +57,16 @@ class ImportPage
 
         return [
             'bundle'         => [],
-            'module_options' => array_map(
-                static fn (array $driver) => ['title' => $driver['label'], 'value' => $driver['key']],
-                $this->drivers->all()
-            ),
+            'module_options' => $this->drivers->options($this->drivers->contentKeys()),
+            'record_options' => $this->drivers->options($this->drivers->recordKeys()),
             'modules'      => [],
+            'records'      => [],
             'on_conflict'  => 'skip',
             'run_id'       => $run?->id,
             'inspection'   => $this->inspection($run),
             'progress'     => $this->progress($run),
             'preview_text' => '',
+            'passphrase'   => '',
             'can_continue' => $run !== null && $run->status() === Run::STATUS_PAUSED,
             'errors_text'  => $this->errors($run),
         ];
@@ -130,6 +130,9 @@ class ImportPage
 
         $run = $this->current($data);
 
+        // In memory for this press only, exactly as on the export side.
+        $run->withPassphrase((string) ($data['passphrase'] ?? ''));
+
         $this->importer->step($this->applySelection($run, $data));
 
         return $this->respond($run, []);
@@ -175,6 +178,10 @@ class ImportPage
         ));
 
         $selection['modules'] = $modules;
+        $selection['records'] = array_values(array_filter(
+            (array) ($data['records'] ?? []),
+            fn ($key) => is_string($key) && in_array($key, $this->drivers->recordKeys(), true)
+        ));
 
         $run->set('selection', $selection)->save();
 

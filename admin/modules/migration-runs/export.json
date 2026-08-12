@@ -56,6 +56,66 @@
     ]
   },
   {
+    "ui": { "type": "section", "icon": "tabler-users", "cols": 12, "class": "pa-5" },
+    "name": "Records about people",
+    "subtitle": "Empty by default, and worth leaving that way unless you are genuinely moving a whole site. These are not content you wrote — they are people's details, and a bundle containing them is a personal-data export the moment it leaves this building.\n\nAccounts arrive on the other site unable to sign in: the password is replaced with one nobody holds, so each person resets it themselves. Nothing else authentication-related travels at all — no sessions, no two-factor secrets, no roles. Somebody on the other site has to grant those deliberately.",
+    "elements": [
+      {
+        "ui": { "type": "row", "dense": false },
+        "elements": [
+          {
+            "ui": { "type": "field", "cols": 12, "multiple": true, "chips": true, "closableChips": true },
+            "key": "records",
+            "type": "autocomplete",
+            "label": "Also include",
+            "placeholder": "Nothing — recommended",
+            "multiple": true,
+            "chips": true,
+            "options": { "master": "record_options", "record_options": [] },
+            "hint": "Orders and invoices are not offered: an imported invoice would carry this site's numbering, and the other site computes its next number from its own rows — so the two collide silently until somebody finds two invoices sharing a number.",
+            "rules": ["nullable", "array"]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "ui": { "type": "section", "icon": "tabler-key", "cols": 12, "class": "pa-5" },
+    "name": "Credentials",
+    "subtitle": "Off by default. Your payment gateway keys, mail password and AI key are never in a bundle unless you turn this on — and then only sealed under a passphrase you choose.\n\nCopying live gateway keys to a staging site means staging can charge real cards. Send the passphrase to the other site separately from the file itself: together in one email, the encryption protects nobody.",
+    "elements": [
+      {
+        "ui": { "type": "row", "dense": false },
+        "elements": [
+          {
+            "ui": { "type": "field", "cols": 12 },
+            "key": "include_credentials",
+            "type": "switch",
+            "label": "Include my payment, mail and AI credentials",
+            "default": false,
+            "hint": "Everything else on this page is content you authored. This is not."
+          },
+          {
+            "ui": { "type": "field", "cols": { "cols": 12, "md": 6 }, "show_if": "include_credentials,true" },
+            "key": "passphrase",
+            "type": "password",
+            "label": "Passphrase",
+            "placeholder": "At least 12 characters",
+            "hint": "Never stored anywhere — not on this server, not in the bundle, not in the log. If you lose it the credentials in the bundle cannot be recovered by anyone, including you."
+          },
+          {
+            "ui": { "type": "field", "cols": { "cols": 12, "md": 6 }, "show_if": "include_credentials,true" },
+            "key": "passphrase_confirm",
+            "type": "password",
+            "label": "Passphrase again",
+            "placeholder": "Type it a second time",
+            "hint": "Asked twice because a typo is not recoverable."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "ui": { "type": "section", "icon": "tabler-progress", "cols": 12, "class": "pa-5" },
     "name": "Progress",
     "subtitle": "A large site takes more than one press. Each press works for about twenty seconds, writes down where it got to, and stops — so a run never dies half-way through with nothing to show for it. Press Export again to carry on.",

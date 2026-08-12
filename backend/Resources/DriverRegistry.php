@@ -48,7 +48,52 @@ class DriverRegistry
         'shipping'        => ShippingDriver::class,
         'tax'             => TaxDriver::class,
         'discounts'       => DiscountDriver::class,
+
+        // Last, and not because it depends on anything: settings are what an operator notices
+        // going wrong soonest, so they land after the content they describe rather than before it.
+        'settings'        => SettingsDriver::class,
+
+        // Opt-in, and separated below rather than merely placed here — see RECORD_GROUPS.
+        'users'           => UserDriver::class,
     ];
+
+    /**
+     * Resources that are records **about people** rather than content the operator authored.
+     *
+     * Kept apart from everything else because they fail the admission test the rest pass, and
+     * because the difference has to survive the screen: the content list defaults to *all of it*,
+     * and this list defaults to **none**. Folding the two together would mean an operator who
+     * pressed Export without reading carefully had just produced a personal-data export.
+     *
+     * Orders, invoices, comments and leads belong here too and are **not implemented**, each for a
+     * specific reason rather than for want of time:
+     *
+     * - **Invoices** carry the source's numbering sequence, and the destination computes its next
+     *   number from its own rows. The collision is silent until an accountant finds two invoices
+     *   sharing a number, and deciding between renumbering (which breaks the customer's copy) and
+     *   preserving (which breaks the sequence) is a product decision, not an implementation one.
+     * - **Orders** are meaningless without their items, addresses and the invoice attached to
+     *   them, so they cannot land before that question is answered.
+     * - **Comments and leads** point at what they are about — a post, a product, a form — through
+     *   ids that must be remapped *at write time*, and a driver has no access to the run's id map.
+     *   Shipping them would need that seam widened, which is worth doing deliberately rather than
+     *   as a side effect.
+     *
+     * @var array<int,string>
+     */
+    public const RECORD_GROUPS = ['users'];
+
+    /** Resources that are ordinary content, ticked by default. */
+    public function contentKeys(): array
+    {
+        return array_values(array_diff($this->keys(), self::RECORD_GROUPS));
+    }
+
+    /** Resources that are records about people, ticked by nobody unless they mean it. */
+    public function recordKeys(): array
+    {
+        return array_values(array_intersect($this->keys(), self::RECORD_GROUPS));
+    }
 
     /** @return array<int,string> */
     public function keys(): array
@@ -98,6 +143,20 @@ class DriverRegistry
             $this->keys(),
             static fn (string $key) => in_array($key, $resources, true)
         ));
+    }
+
+    /**
+     * Title/value options for one set of keys, for the selection fields.
+     *
+     * @param  array<int,string>  $keys
+     * @return array<int,array{title:string,value:string}>
+     */
+    public function options(array $keys): array
+    {
+        return array_map(fn (string $key) => [
+            'title' => $this->for($key)->label(),
+            'value' => $key,
+        ], array_values($keys));
     }
 
     /**

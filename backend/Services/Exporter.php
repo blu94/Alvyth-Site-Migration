@@ -5,6 +5,7 @@ namespace Plugin\SiteMigration\Backend\Services;
 use Illuminate\Database\Eloquent\Model;
 use Plugin\SiteMigration\Backend\Bundle\BundleContext;
 use Plugin\SiteMigration\Backend\Bundle\BundleWriter;
+use Plugin\SiteMigration\Backend\Bundle\CredentialVault;
 use Plugin\SiteMigration\Backend\Bundle\Manifest;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Plugin\SiteMigration\Backend\Runs\Run;
@@ -64,8 +65,13 @@ class Exporter
      */
     private function resources(Run $run): array
     {
+        // Content and record groups are chosen separately on screen — one defaults to
+        // everything, the other to nothing — and are one list from here on.
         $selected = array_values(array_filter(
-            (array) ($run->selection()['modules'] ?? []),
+            array_merge(
+                (array) ($run->selection()['modules'] ?? []),
+                (array) ($run->selection()['records'] ?? [])
+            ),
             fn ($key) => is_string($key) && $this->drivers->has($key)
         ));
 
@@ -291,9 +297,15 @@ class Exporter
     {
         $contents = $this->written($writer, $resources, true);
 
-        $manifest = Manifest::build($contents, (bool) ($run->selection()['include_media'] ?? false));
+        $manifest = Manifest::build(
+            $contents,
+            (bool) ($run->selection()['include_media'] ?? false),
+            $this->sealCredentials($run)
+        );
 
-        $writer->seal($manifest);
+        $path = $writer->seal($manifest);
+
+        $this->warnAboutSize($run, $path);
 
         $run->set('status', Run::STATUS_COMPLETED)
             ->set('manifest', $manifest->toArray())
@@ -313,6 +325,135 @@ class Exporter
                 number_format($written)
             ),
         ];
+    }
+
+    /**
+     * Say plainly when the bundle is too big to upload anywhere.
+     *
+     * **The real ceiling on this feature, and it is not this package's to raise.** The import side
+     * comes in through `POST /admin/assets`, so PHP's `upload_max_filesize` and `post_max_size`
+     * govern — commonly 2–64 MB on the shared hosting this product targets. A JSON-only bundle for
+     * a few thousand records is small; **a bundle with media is not**, which is the entire reason
+     * `include_media` is a switch rather than always-on.
+     *
+     * Measured against *this* install's limits, which is the best available proxy: the destination
+     * is a different machine and its limits are unknowable from here. So this is a warning rather
+     * than a refusal — refusing on a guess about somebody else's server would block an export that
+     * would have worked fine, and the operator can always fetch the file over SFTP regardless.
+     */
+    private function warnAboutSize(Run $run, string $path): void
+    {
+        if (! is_file($path)) {
+            return;
+        }
+
+        $bytes = (int) filesize($path);
+        $limit = $this->uploadLimit();
+
+        $run->set('bundle_bytes', $bytes);
+
+        if ($limit <= 0 || $bytes <= $limit) {
+            return;
+        }
+
+        $run->addErrors(sprintf(
+            'This bundle is %s, and this server only accepts uploads up to %s. The other site is '
+            . 'probably configured similarly, so the import screen may refuse it. Export again '
+            . 'with "Include the image files" turned off — the bundle will be a fraction of the '
+            . 'size, and the new site will load images from here until you upload them there.',
+            $this->humanBytes($bytes),
+            $this->humanBytes($limit)
+        ));
+    }
+
+    /** The smaller of `upload_max_filesize` and `post_max_size`, in bytes. */
+    private function uploadLimit(): int
+    {
+        $values = array_filter([
+            $this->iniBytes('upload_max_filesize'),
+            $this->iniBytes('post_max_size'),
+        ]);
+
+        return $values === [] ? 0 : (int) min($values);
+    }
+
+    /** PHP writes these as `64M`, which is not a number until it is unpacked. */
+    private function iniBytes(string $key): int
+    {
+        $raw = trim((string) ini_get($key));
+
+        if ($raw === '') {
+            return 0;
+        }
+
+        $unit  = strtolower(substr($raw, -1));
+        $value = (int) $raw;
+
+        return match ($unit) {
+            'g'     => $value * 1024 ** 3,
+            'm'     => $value * 1024 ** 2,
+            'k'     => $value * 1024,
+            default => $value,
+        };
+    }
+
+    private function humanBytes(int $bytes): string
+    {
+        foreach (['bytes', 'KB', 'MB', 'GB'] as $unit) {
+            if ($bytes < 1024 || $unit === 'GB') {
+                return ($unit === 'bytes' ? $bytes : round($bytes, 1)) . ' ' . $unit;
+            }
+
+            $bytes = (int) round($bytes / 1024);
+        }
+
+        return $bytes . ' bytes';
+    }
+
+    /**
+     * Seal the secrets, if the operator opted in and gave a passphrase.
+     *
+     * **Last, after every record is written**, and read from the run's transient store rather than
+     * from its saved selection: the passphrase reaches this through memory only. It is never
+     * written to `state.json`, the log or the activity trail, because the entire security model is
+     * that the file and the passphrase travel by different routes.
+     *
+     * @return array<string,mixed> the manifest description, or `[]` when nothing was sealed
+     */
+    private function sealCredentials(Run $run): array
+    {
+        $selection = $run->selection();
+
+        if (($selection['include_credentials'] ?? false) !== true) {
+            return [];
+        }
+
+        $passphrase = (string) $run->passphrase();
+
+        if ($passphrase === '') {
+            $run->addErrors(
+                'Credentials were not included: no passphrase was given. Everything else was '
+                . 'exported normally.'
+            );
+
+            return [];
+        }
+
+        $vault  = app(CredentialVault::class);
+        $groups = $vault->collect();
+
+        if ($groups === []) {
+            $run->addErrors('Credentials were requested but this site has none configured to send.');
+
+            return [];
+        }
+
+        $description = $vault->seal($run->directory . '/staging', $groups, $passphrase);
+
+        // The **outcome** only — which groups went, never a value and never the passphrase.
+        $run->set('credentials', ['applied' => array_keys($groups)]);
+
+        return $description;
     }
 
     /**

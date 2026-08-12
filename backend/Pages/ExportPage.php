@@ -2,6 +2,7 @@
 
 namespace Plugin\SiteMigration\Backend\Pages;
 
+use Plugin\SiteMigration\Backend\Bundle\CredentialVault;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Plugin\SiteMigration\Backend\Runs\Run;
 use Plugin\SiteMigration\Backend\Runs\RunStore;
@@ -35,13 +36,17 @@ class ExportPage
         $run = $this->resumable();
 
         return [
-            'modules'         => array_column($this->drivers->all(), 'key'),
-            'module_options'  => array_map(
-                static fn (array $driver) => ['title' => $driver['label'], 'value' => $driver['key']],
-                $this->drivers->all()
-            ),
-            'on_conflict'   => 'skip',
-            'include_media' => true,
+            // Content defaults to everything; record groups default to nothing. That asymmetry
+            // is the whole point of splitting them.
+            'modules'        => $this->drivers->contentKeys(),
+            'module_options' => $this->drivers->options($this->drivers->contentKeys()),
+            'records'        => [],
+            'record_options' => $this->drivers->options($this->drivers->recordKeys()),
+            'on_conflict'         => 'skip',
+            'include_media'       => true,
+            'include_credentials' => false,
+            'passphrase'          => '',
+            'passphrase_confirm'  => '',
             'run_id'        => $run?->id,
             'progress'      => $this->progress($run),
             'bundle_path'   => $run?->bundlePath() === null ? null : $this->relative($run),
@@ -80,6 +85,10 @@ class ExportPage
 
             $run = $this->runs->create(Run::DIRECTION_EXPORT, [
                 'modules'     => $modules,
+                'records'     => array_values(array_filter(
+                    (array) ($data['records'] ?? []),
+                    fn ($key) => is_string($key) && in_array($key, $this->drivers->recordKeys(), true)
+                )),
                 'on_conflict' => ($data['on_conflict'] ?? 'skip') === 'overwrite' ? 'overwrite' : 'skip',
 
                 // Defaults **on**. A bundle whose images did not travel leaves the imported site
@@ -87,8 +96,19 @@ class ExportPage
                 // knowingly rather than discover when this hosting is cancelled.
                 'include_media' => ! array_key_exists('include_media', $data)
                     || (bool) $data['include_media'],
+
+                // Defaults **off**, and stays a deliberate act. The switch carries one specific
+                // warning rather than a generic caution, because the risk is specific: copying
+                // live gateway keys to a staging site means staging can charge real cards.
+                'include_credentials' => (bool) ($data['include_credentials'] ?? false),
             ]);
         }
+
+        $this->assertPassphrasePair($run, $data);
+
+        // Held in memory for this press only. `withPassphrase()` deliberately does not touch the
+        // run's state file, so nothing writes it to disk at any point.
+        $run->withPassphrase((string) ($data['passphrase'] ?? ''));
 
         $this->exporter->step($run);
 
@@ -107,6 +127,52 @@ class ExportPage
             'bundle_path' => $fresh?->bundlePath() === null ? null : $this->relative($fresh),
             'errors_text' => $this->errors($fresh),
         ];
+    }
+
+    /**
+     * Refuse a mistyped passphrase before anything is sealed under it.
+     *
+     * **Checked here rather than in the schema**, because no validation rule can express "required,
+     * and equal to that other field, but only when this switch is on" — and the consequence of
+     * getting it wrong is unusually bad. A passphrase is not stored anywhere, so a typo is not
+     * recoverable: the bundle would be sealed under a string nobody knows, and the operator would
+     * discover it on the destination, having already carried the file there.
+     *
+     * @param  array<string,mixed>  $data
+     *
+     * @throws \RuntimeException
+     */
+    private function assertPassphrasePair(Run $run, array $data): void
+    {
+        if (($run->selection()['include_credentials'] ?? false) !== true) {
+            return;
+        }
+
+        $passphrase = (string) ($data['passphrase'] ?? '');
+        $confirm    = (string) ($data['passphrase_confirm'] ?? '');
+
+        if ($passphrase === '' && $confirm === '') {
+            // Empty on a Continue press is not an error — the operator may simply have navigated
+            // back. The exporter records that credentials were left out.
+            return;
+        }
+
+        if (! hash_equals($passphrase, $confirm)) {
+            throw new \RuntimeException(
+                'The two passphrases do not match. Nothing has been exported. Since the passphrase '
+                . 'is never stored, a typo here would seal your credentials under a string nobody '
+                . 'knows — which is why it is asked for twice.'
+            );
+        }
+
+        if (strlen($passphrase) < CredentialVault::MIN_PASSPHRASE) {
+            throw new \RuntimeException(sprintf(
+                'The passphrase must be at least %d characters. Once the bundle leaves this server '
+                . 'it is the only thing protecting your gateway keys, and whoever holds the file '
+                . 'can guess at it for as long as they like.',
+                CredentialVault::MIN_PASSPHRASE
+            ));
+        }
     }
 
     /**

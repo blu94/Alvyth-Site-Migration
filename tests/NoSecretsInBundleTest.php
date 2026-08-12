@@ -66,6 +66,49 @@ class NoSecretsInBundleTest extends TestCase
     }
 
     /**
+     * **With credentials switched on, the same grep must still find nothing.**
+     *
+     * This is the half of the gate that is easy to lose. The values may exist only inside
+     * `credentials.enc`, sealed under the operator's passphrase — never in `data/settings.json`,
+     * never in the manifest, and never as plaintext anywhere in the archive. A bundle that carried
+     * both the encrypted block *and* a readable copy would be strictly worse than one that carried
+     * neither, because the operator would believe the encryption was protecting them.
+     */
+    #[Test]
+    public function opting_into_credentials_still_puts_no_plaintext_in_the_bundle(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        app(MailInterface::class)->updateSettings([
+            'host'     => 'smtp.example.test',
+            'username' => 'postmaster@example.test',
+            'password' => self::SMTP_PASSWORD,
+        ]);
+
+        Product::factory()->create([
+            'sku'            => 'SEC-' . bin2hex(random_bytes(3)),
+            'productable_id' => null,
+        ]);
+
+        $passphrase = 'a passphrase long enough to pass';
+
+        $bundle = $this->exportEverything(credentials: $passphrase);
+
+        $members = $this->members($bundle);
+
+        $this->assertArrayHasKey(
+            'credentials.enc',
+            $members,
+            'Credentials were requested but no encrypted block was written, so this proved nothing.'
+        );
+
+        foreach ($members as $name => $contents) {
+            $this->assertStringNotContainsString(self::SMTP_PASSWORD, $contents, "Plaintext secret in '{$name}'.");
+            $this->assertStringNotContainsString($passphrase, $contents, "The passphrase itself is in '{$name}'.");
+        }
+    }
+
+    /**
      * The manifest names no secret either.
      *
      * Called out separately because the manifest is the one member read *before* the operator
@@ -118,13 +161,27 @@ class NoSecretsInBundleTest extends TestCase
     // ---------------------------------------------------------------- helpers
 
     /** Export every resource the registry knows about, so future drivers are covered too. */
-    private function exportEverything(): string
+    private function exportEverything(?string $credentials = null): string
     {
+        $registry = app(DriverRegistry::class);
+
         $run = app(RunStore::class)->create(Run::DIRECTION_EXPORT, [
-            'modules' => app(DriverRegistry::class)->keys(),
+            'modules'             => $registry->contentKeys(),
+            'records'             => $registry->recordKeys(),
+            'include_credentials' => $credentials !== null,
         ]);
 
-        $this->pressUntilDone(fn () => app(Exporter::class)->step(app(RunStore::class)->find($run->id)));
+        // The passphrase is transient by design, so it has to be handed to the run on every press
+        // exactly as the screen does.
+        $this->pressUntilDone(function () use ($run, $credentials) {
+            $fresh = app(RunStore::class)->find($run->id);
+
+            if ($credentials !== null) {
+                $fresh->withPassphrase($credentials);
+            }
+
+            return app(Exporter::class)->step($fresh);
+        });
 
         $bundle = app(RunStore::class)->find($run->id)->bundlePath();
 
