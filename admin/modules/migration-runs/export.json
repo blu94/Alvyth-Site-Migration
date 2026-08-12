@@ -15,7 +15,7 @@
             "placeholder": "Choose what to include",
             "multiple": true,
             "chips": true,
-            "options": { "master": "module_options", "module_options": [] },
+            "options": { "url": "/admin/modules/migration-runs/options", "master": "content" },
             "hint": "Records are matched on their own natural key when they land — a product by its SKU — never by database id, so importing the same bundle twice updates rather than duplicates.",
             "rules": ["required", "array"]
           },
@@ -71,7 +71,7 @@
             "placeholder": "Nothing — recommended",
             "multiple": true,
             "chips": true,
-            "options": { "master": "record_options", "record_options": [] },
+            "options": { "url": "/admin/modules/migration-runs/options", "master": "records" },
             "hint": "Orders and invoices are not offered: an imported invoice would carry this site's numbering, and the other site computes its next number from its own rows — so the two collide silently until somebody finds two invoices sharing a number.",
             "rules": ["nullable", "array"]
           }

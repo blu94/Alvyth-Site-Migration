@@ -125,6 +125,54 @@ class RunStore
     }
 
     /**
+     * The selection an operator last exported with, so the next visit does not start from scratch.
+     *
+     * **One remembered selection, not named presets.** Named presets are a management surface of
+     * their own — create, rename, delete, which is the default — and the problem an operator
+     * actually has is "give me what I did last time". Pushing staging to production is the same
+     * export every week, and re-ticking it by hand is where a mis-selection creeps in: the kind
+     * that is invisible until the destination turns out to be missing something.
+     *
+     * Kept beside the runs rather than in a run, because it outlives any one of them — including
+     * the ones an operator deletes to reclaim disk.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function lastSelection(): ?array
+    {
+        $path = $this->root() . '/last-export.json';
+
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $data = json_decode((string) file_get_contents($path), true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * Remember a selection for next time.
+     *
+     * **The passphrase is not part of a selection and never reaches here** — it lives on the run
+     * in memory for one press. What is remembered is which resources were ticked and whether media
+     * and credentials were wanted, which is the shape of the choice rather than its secret.
+     *
+     * @param  array<string,mixed>  $selection
+     */
+    public function rememberSelection(array $selection): void
+    {
+        File::ensureDirectoryExists($this->root());
+
+        file_put_contents(
+            $this->root() . '/last-export.json',
+            json_encode(array_intersect_key($selection, array_flip([
+                'modules', 'records', 'include_media', 'include_credentials', 'on_conflict',
+            ])), JSON_PRETTY_PRINT)
+        );
+    }
+
+    /**
      * Remove a run and everything it wrote — state, id map and bundle.
      *
      * The records an import created are untouched. Deleting the history of a run is not undoing

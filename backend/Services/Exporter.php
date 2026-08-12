@@ -3,6 +3,7 @@
 namespace Plugin\SiteMigration\Backend\Services;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\File;
 use Plugin\SiteMigration\Backend\Bundle\BundleContext;
 use Plugin\SiteMigration\Backend\Bundle\BundleWriter;
 use Plugin\SiteMigration\Backend\Bundle\CredentialVault;
@@ -306,6 +307,15 @@ class Exporter
         $path = $writer->seal($manifest);
 
         $this->warnAboutSize($run, $path);
+
+        // The staging tree is working space that exists only so a paused walk can resume without
+        // re-reading the database. Once the zip is written it is a second, *uncompressed* copy of
+        // everything — for a media-included export of a real site that is tens of megabytes of
+        // pure duplication, kept forever, for no reader.
+        //
+        // Removed only here, on the press that seals. A paused run keeps its staging directory,
+        // which is the whole point of having one.
+        File::deleteDirectory($run->directory . '/staging');
 
         $run->set('status', Run::STATUS_COMPLETED)
             ->set('manifest', $manifest->toArray())

@@ -34,19 +34,92 @@ class PackageManifestTest extends TestCase
         return PluginManifest::fromArray($this->raw());
     }
 
-    /** The version range is honoured, and states a real upper bound. */
+    /**
+     * The floor is 1.3.0, because that is the oldest core this package can actually run on.
+     *
+     * **Checked against the core repository, not assumed.** At the commit that bumped the version
+     * to 1.2.0, three seams this package calls did not exist yet: `App\Services\Seo\SitemapCache`,
+     * `App\Models\Revision` and the `EmailBranding` repository. On a genuine 1.2.0 install every
+     * import would fatal at `SitemapCache` on its **last** step — after writing every record — and
+     * every page overwrite would fatal at `Revision`.
+     *
+     * The specification says `>=1.2.0` and the specification is wrong. Loosening this again brings
+     * back a failure whose only symptom is a migration that dies after doing all the work.
+     */
     #[Test]
-    public function the_package_declares_a_bounded_ovynt_range(): void
+    public function the_package_refuses_a_core_missing_the_seams_it_calls(): void
     {
         $manifest = $this->manifest();
 
-        $this->assertTrue($manifest->satisfiedBy('1.2.0'));
+        $this->assertFalse($manifest->satisfiedBy('1.2.0'), 'A build with no SitemapCache or Revision must be refused.');
+        $this->assertFalse($manifest->satisfiedBy('1.2.9'));
+
+        $this->assertTrue($manifest->satisfiedBy('1.3.0'));
         $this->assertTrue($manifest->satisfiedBy((string) config('ovynt.version')));
 
         // A 2.x core is a different contract, and installing into one unread is how a package
         // breaks quietly.
         $this->assertFalse($manifest->satisfiedBy('2.0.0'));
-        $this->assertFalse($manifest->satisfiedBy('1.1.0'));
+    }
+
+    /**
+     * Every class the package reaches into core for actually exists.
+     *
+     * Cheaper than it looks and worth more: these are the calls that make the version floor a real
+     * constraint rather than a number, so a core upgrade that moved or renamed one fails here
+     * rather than half-way through somebody's migration.
+     */
+    #[Test]
+    public function every_core_seam_it_depends_on_exists(): void
+    {
+        foreach ([
+            \App\Services\Seo\SitemapCache::class,
+            \App\Models\Revision::class,
+            \App\Services\Core\Archive\SafeZip::class,
+            \App\Repositories\Asset\AssetInterface::class,
+            \App\Repositories\Setting\Mail\MailInterface::class,
+            \App\Repositories\Setting\Payment\PaymentInterface::class,
+            \App\Repositories\Setting\EmailBranding\EmailBrandingInterface::class,
+            \App\Repositories\Setting\Localization\LocalizationInterface::class,
+            \App\Repositories\Setting\Application\ApplicationInterface::class,
+            \App\Repositories\Setting\Einvoice\EinvoiceSettingInterface::class,
+            \App\Repositories\Ai\AiRepository::class,
+        ] as $class) {
+            $this->assertTrue(
+                interface_exists($class) || class_exists($class),
+                "{$class} is gone from core, so this package's version floor no longer describes what it needs."
+            );
+        }
+
+        $this->assertTrue(
+            defined(\App\Models\Revision::class . '::KEEP_PER_RECORD'),
+            'Revision::KEEP_PER_RECORD is gone, so the page snapshot trim no longer matches the trait.'
+        );
+    }
+
+    /**
+     * The manifest declares no artwork it does not ship.
+     *
+     * Ovynt ignores a path it cannot resolve and falls back to the Tabler icon, so a wrong entry
+     * breaks nothing — it just asserts something untrue, and sends the next reader looking for
+     * files that were never there. Real artwork dropped at the package root is picked up without
+     * any manifest entry at all.
+     */
+    #[Test]
+    public function the_manifest_declares_no_artwork_it_does_not_ship(): void
+    {
+        $raw = $this->raw();
+
+        foreach (['banner', 'thumbnail'] as $key) {
+            if (! isset($raw[$key])) {
+                continue;
+            }
+
+            $this->assertFileExists(
+                dirname(__DIR__) . '/' . $raw[$key],
+                "plugin.json declares {$key} at \"{$raw[$key]}\" and the file is not there."
+            );
+        }
     }
 
     /**

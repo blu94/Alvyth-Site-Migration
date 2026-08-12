@@ -5,6 +5,7 @@ namespace Plugin\SiteMigration\Backend\Repositories;
 use Plugin\SiteMigration\Backend\Pages\ExportPage;
 use Plugin\SiteMigration\Backend\Pages\HistoryPage;
 use Plugin\SiteMigration\Backend\Pages\ImportPage;
+use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 
 /**
  * The module Ovynt resolves for `migration-runs`.
@@ -59,9 +60,33 @@ class MigrationRunRepository
         return null;
     }
 
+    /**
+     * The option lists the three screens' dropdowns are built from.
+     *
+     * **This endpoint exists because a schema cannot hand a field its options from page data.**
+     * `BuilderField::resolvedOptions()` reads `element.options` and nothing else — its `master` key
+     * names a key *inside that same object*, not a key of the bound model — so
+     * `{"master": "module_options", "module_options": []}` resolves to the literal empty array,
+     * every time. The pickers rendered their pre-selected chips (those come from the *value*) over
+     * a dropdown with nothing in it, which is why the fault survived a screen-by-screen check: the
+     * page looked right until somebody opened the list.
+     *
+     * The only other way in is a URL, and `GET /admin/modules/{module}/options` is the one the
+     * engine already routes here. Sourcing from the registry rather than restating the resource
+     * list in three JSON files also keeps a single source of truth — a driver added later appears
+     * in all three dropdowns with no schema edit.
+     *
+     * @return array<string,mixed>
+     */
     public function getOptions(array $columns = [])
     {
-        return [];
+        $registry = app(DriverRegistry::class);
+
+        return [
+            'content' => $registry->options($registry->contentKeys()),
+            'records' => $registry->options($registry->recordKeys()),
+            'runs'    => app(HistoryPage::class)->deleteOptions(),
+        ];
     }
 
     /**
@@ -103,6 +128,7 @@ class MigrationRunRepository
             'import'         => app(ImportPage::class)->inspect($data),
             'import-preview' => app(ImportPage::class)->preview($data),
             'import-apply'   => app(ImportPage::class)->apply($data),
+            'history-delete' => app(HistoryPage::class)->delete($data),
             default          => null,
         };
     }

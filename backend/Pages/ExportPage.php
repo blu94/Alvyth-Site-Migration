@@ -35,15 +35,23 @@ class ExportPage
     {
         $run = $this->resumable();
 
+        // What the operator chose last time, so a weekly staging-to-production push does not start
+        // from a blank form every time. Falls back to "all content, no people, no credentials".
+        $last = $this->runs->lastSelection() ?? [];
+
         return [
             // Content defaults to everything; record groups default to nothing. That asymmetry
             // is the whole point of splitting them.
-            'modules'        => $this->drivers->contentKeys(),
+            'modules'        => $this->remembered($last, 'modules', $this->drivers->contentKeys()),
             'module_options' => $this->drivers->options($this->drivers->contentKeys()),
-            'records'        => [],
+            'records'        => $this->remembered($last, 'records', []),
             'record_options' => $this->drivers->options($this->drivers->recordKeys()),
-            'on_conflict'         => 'skip',
-            'include_media'       => true,
+            'on_conflict'         => (string) ($last['on_conflict'] ?? 'skip'),
+            'include_media'       => (bool) ($last['include_media'] ?? true),
+
+            // **Never remembered as on.** Every other choice is a convenience; this one is a
+            // security decision, and a form that came up pre-ticked would let an operator export
+            // their gateway keys by pressing a button they pressed last week for other reasons.
             'include_credentials' => false,
             'passphrase'          => '',
             'passphrase_confirm'  => '',
@@ -70,6 +78,12 @@ class ExportPage
     public function save(array $data): array
     {
         Permissions::assertMayRun();
+
+        // **Validated before anything is created.** Doing this after `create()` left a `pending`
+        // run directory behind every time somebody mistyped the confirmation — which is precisely
+        // the case the double entry exists to catch, so the orphan was guaranteed to happen to the
+        // people the check is for.
+        $this->assertPassphrasePair($data);
 
         $run = $this->runs->find($data['run_id'] ?? null);
 
@@ -102,9 +116,12 @@ class ExportPage
                 // live gateway keys to a staging site means staging can charge real cards.
                 'include_credentials' => (bool) ($data['include_credentials'] ?? false),
             ]);
-        }
 
-        $this->assertPassphrasePair($run, $data);
+            // Remembered here rather than on completion, so a run the operator abandons still
+            // leaves them the selection they were building — which is the moment the memory is
+            // most useful, not least.
+            $this->runs->rememberSelection($run->selection());
+        }
 
         // Held in memory for this press only. `withPassphrase()` deliberately does not touch the
         // run's state file, so nothing writes it to disk at any point.
@@ -130,6 +147,28 @@ class ExportPage
     }
 
     /**
+     * A remembered list, narrowed to resources that still exist.
+     *
+     * A selection saved before an upgrade can name a driver this version no longer has, and
+     * replaying it unchecked would put a dead key into a run that then reports it as unmovable.
+     *
+     * @param  array<string,mixed>  $last
+     * @param  array<int,string>  $fallback
+     * @return array<int,string>
+     */
+    private function remembered(array $last, string $key, array $fallback): array
+    {
+        if (! array_key_exists($key, $last) || ! is_array($last[$key])) {
+            return $fallback;
+        }
+
+        return array_values(array_filter(
+            $last[$key],
+            fn ($k) => is_string($k) && $this->drivers->has($k)
+        ));
+    }
+
+    /**
      * Refuse a mistyped passphrase before anything is sealed under it.
      *
      * **Checked here rather than in the schema**, because no validation rule can express "required,
@@ -138,13 +177,16 @@ class ExportPage
      * recoverable: the bundle would be sealed under a string nobody knows, and the operator would
      * discover it on the destination, having already carried the file there.
      *
+     * Reads the switch from the **posted form** rather than from a run, because it has to answer
+     * before a run exists — see the call site.
+     *
      * @param  array<string,mixed>  $data
      *
      * @throws \RuntimeException
      */
-    private function assertPassphrasePair(Run $run, array $data): void
+    private function assertPassphrasePair(array $data): void
     {
-        if (($run->selection()['include_credentials'] ?? false) !== true) {
+        if ((bool) ($data['include_credentials'] ?? false) !== true) {
             return;
         }
 

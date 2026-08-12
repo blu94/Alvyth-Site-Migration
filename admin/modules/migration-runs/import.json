@@ -61,7 +61,7 @@
             "placeholder": "Everything in the bundle",
             "multiple": true,
             "chips": true,
-            "options": { "master": "module_options", "module_options": [] },
+            "options": { "url": "/admin/modules/migration-runs/options", "master": "content" },
             "rules": ["nullable", "array"]
           },
           {
@@ -72,7 +72,7 @@
             "placeholder": "Nothing — recommended",
             "multiple": true,
             "chips": true,
-            "options": { "master": "record_options", "record_options": [] },
+            "options": { "url": "/admin/modules/migration-runs/options", "master": "records" },
             "hint": "Only what the bundle actually carries can be brought in. Imported accounts cannot sign in until each person resets their own password, and they arrive with no role — grant those yourself, deliberately.",
             "rules": ["nullable", "array"]
           },

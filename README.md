@@ -189,6 +189,32 @@ bundles gone.
 
 ---
 
+## Known gaps
+
+[`OUTSTANDING.md`](OUTSTANDING.md) is the single list — what is missing, what was deferred and why,
+and the two questions that need a product decision rather than more code.
+
+---
+
+## Releasing
+
+The package is **unsigned**, so every install prints a warning. Signing is a release step, not a
+repository state — `plugin.sig` covers exact bytes and goes stale on the next edit, which is why it
+is `.gitignore`d:
+
+```bash
+php artisan ovynt:plugin-sign /path/to/site-migration --key=~/keys/vendor-private.pem
+# then zip the directory. Never edit a file afterwards.
+```
+
+Keep the private key offline. A signing key in the repository would let anyone mint packages in the
+author's name, which is worse than shipping unsigned.
+
+The package ships no artwork, so Ovynt draws its Tabler icon. Dropping `banner.png` and
+`thumbnail.png` at the package root is picked up automatically — no manifest change needed.
+
+---
+
 ## Development
 
 ```bash
