@@ -1,0 +1,29 @@
+[
+  {
+    "ui": { "type": "section", "icon": "tabler-history", "cols": 12, "class": "pa-5" },
+    "name": "Recent runs",
+    "subtitle": "Every export and import this site has performed, newest first. Deleting a bundle from the server does not undo the run — the records it wrote stay exactly where they are.",
+    "elements": [
+      {
+        "ui": { "type": "row", "dense": false },
+        "elements": [
+          {
+            "ui": { "type": "field", "cols": 12 },
+            "key": "runs_text",
+            "type": "textarea",
+            "label": "History",
+            "rows": 18,
+            "readonly": true,
+            "placeholder": "No migrations have been run on this site yet."
+          },
+          {
+            "ui": { "type": "field", "cols": 12, "valueClass": "text-body-2" },
+            "key": "storage_at",
+            "type": "display",
+            "label": "Runs are kept under"
+          }
+        ]
+      }
+    ]
+  }
+]

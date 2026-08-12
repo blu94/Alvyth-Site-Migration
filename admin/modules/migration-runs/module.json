@@ -1,0 +1,13 @@
+{
+  "name": "Site Migration",
+  "type": "migration-runs",
+  "resource": "site_migration",
+  "routeBase": "module/migration-runs",
+  "order": 45,
+  "icon": "tabler-transfer",
+  "api": "/admin/modules/migration-runs",
+  "readonly": true,
+  "export": { "$ref": "export.json" },
+  "import": { "$ref": "import.json" },
+  "history": { "$ref": "history.json" }
+}
