@@ -214,6 +214,7 @@ The tests use `DatabaseTransactions`, never `RefreshDatabase`.
 | `CredentialVaultTest` | The right passphrase reproduces every secret; a wrong one and a tampered block both fail closed |
 | `SettingsExclusionTest` | Payment, mail and AI settings never travel; the e-invoice profile does, without its credential keys |
 | `UserImportTest` | No password or second factor leaves the site; imported accounts cannot sign in and carry no role |
+| `RewritePassTest` | Gate 7 — a source host is rewritten out of a builder node, the pass is idempotent, and URLs are left alone when media did not travel |
 | `BundleFormatTest` | A newer bundle is refused, a corrupt one is caught, a damaged line does not lose the rest |
 | `PackageManifestTest` | `api` plural, `routeBase` singular, every `rules` an array, no tables |
 
