@@ -3,6 +3,7 @@
 namespace Plugin\SiteMigration\Backend\Services;
 
 use Illuminate\Database\Eloquent\Model;
+use Plugin\SiteMigration\Backend\Bundle\BundleContext;
 use Plugin\SiteMigration\Backend\Bundle\BundleWriter;
 use Plugin\SiteMigration\Backend\Bundle\Manifest;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
@@ -68,16 +69,27 @@ class Exporter
             fn ($key) => is_string($key) && $this->drivers->has($key)
         ));
 
-        $gated = Permissions::filterReadable($selected);
+        // Gated on the *permission* resource, not the driver key. Two of them differ — posts are
+        // gated by `blogs`, email templates by `settings` — and asking `can('posts.view')` would
+        // check a permission that exists nowhere, silently dropping the resource from the bundle.
+        $allowed = $refused = [];
 
-        if ($gated['refused'] !== []) {
+        foreach ($selected as $key) {
+            if (Permissions::allows($this->drivers->for($key)->permissionResource() . '.view')) {
+                $allowed[] = $key;
+            } else {
+                $refused[] = $key;
+            }
+        }
+
+        if ($refused !== []) {
             $run->addErrors(sprintf(
                 'Left out of this bundle because you do not have permission to view them: %s.',
-                implode(', ', $gated['refused'])
+                implode(', ', $refused)
             ));
         }
 
-        return $this->drivers->ordered($gated['allowed']);
+        return $this->drivers->ordered($allowed);
     }
 
     /**
@@ -144,7 +156,15 @@ class Exporter
         int $afterId,
         StepBudget $budget,
     ): array {
-        $driver    = $this->drivers->for($resource);
+        $driver = $this->drivers->for($resource);
+
+        // Only the asset driver acts on this — it is what tells it where to copy bytes to, and
+        // whether the operator asked for them at all.
+        $driver->useBundle(new BundleContext(
+            $run->directory . '/staging',
+            (bool) ($run->selection()['include_media'] ?? false)
+        ));
+
         $keyColumn = $this->qualifiedKey($driver->exportQuery()->getModel());
         $processed = 0;
         $failed    = 0;
@@ -271,7 +291,7 @@ class Exporter
     {
         $contents = $this->written($writer, $resources, true);
 
-        $manifest = Manifest::build($contents);
+        $manifest = Manifest::build($contents, (bool) ($run->selection()['include_media'] ?? false));
 
         $writer->seal($manifest);
 

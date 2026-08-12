@@ -21,12 +21,33 @@ class DriverRegistry
     /**
      * Resource key => driver class, **in import order**.
      *
-     * Stage 2 ships products alone, deliberately. The whole risk in this package is in identity,
-     * the id map and the rewrite pass; adding twenty drivers before those hold means finding a
-     * defect twenty drivers deep.
+     * Read this list as a dependency graph, because that is what it is:
+     *
+     * - **Taxonomies first.** A product attaches to a category by slug, and attaching to a row
+     *   that does not exist yet silently drops the association rather than failing.
+     * - **Assets before anything that embeds one.** The rewrite pass can only point a builder
+     *   node at an image this run has already placed.
+     * - **Products before pages**, because a page can feature a product; pages before posts, for
+     *   the links between them.
+     * - **Commerce config last**, because nothing else references it — a product names its tax
+     *   *class* as a string, not a rate by id, which is precisely what makes the pair portable.
+     *
+     * Getting a position wrong does not throw. It produces records referencing rows that do not
+     * exist yet, which reads on the destination as a broken relation and is indistinguishable
+     * from data loss.
      */
     private const DRIVERS = [
-        'products' => ProductDriver::class,
+        'categories'      => CategoryDriver::class,
+        'tags'            => TagDriver::class,
+        'assets'          => AssetDriver::class,
+        'products'        => ProductDriver::class,
+        'pages'           => PageDriver::class,
+        'posts'           => PostDriver::class,
+        'forms'           => FormDriver::class,
+        'email_templates' => EmailTemplateDriver::class,
+        'shipping'        => ShippingDriver::class,
+        'tax'             => TaxDriver::class,
+        'discounts'       => DiscountDriver::class,
     ];
 
     /** @return array<int,string> */

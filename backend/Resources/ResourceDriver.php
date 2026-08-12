@@ -4,6 +4,7 @@ namespace Plugin\SiteMigration\Backend\Resources;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Plugin\SiteMigration\Backend\Bundle\BundleContext;
 
 /**
  * What one resource means as a bundle: how it is walked, what a record looks like as a line of
@@ -36,6 +37,18 @@ interface ResourceDriver
 
     /** Operator-facing name, for the selection list and the dry-run report. */
     public function label(): string;
+
+    /**
+     * The **core permission resource** that gates this driver.
+     *
+     * Usually identical to {@see key()}, and deliberately allowed to differ, because core's
+     * permission names and this package's resource keys were chosen for different jobs and two of
+     * them disagree: posts are gated by `blogs`, and email templates by `settings`. Deriving the
+     * permission from the key instead would ask `can('posts.view')` — a permission that exists
+     * nowhere — and the resource would be **silently dropped from every export** with nothing to
+     * explain it.
+     */
+    public function permissionResource(): string;
 
     /**
      * The column a record is matched on when it lands.
@@ -93,4 +106,23 @@ interface ResourceDriver
      * @return array<int,string>
      */
     public function volatileFields(): array;
+
+    /**
+     * Tell the driver where the bundle's own files are, before it is used.
+     *
+     * Only the asset driver acts on this — its record is a pointer to bytes that live beside the
+     * data files rather than inside them. Every other driver ignores it.
+     */
+    public function useBundle(BundleContext $context): void;
+
+    /**
+     * Fields whose contents may embed references to other records.
+     *
+     * Read by the rewrite pass, which repairs ids and media URLs that a foreign key could not — a
+     * page's builder nodes carry asset ids inside an opaque JSON blob, and a richtext body carries
+     * absolute URLs to the source install. Returning `[]` asserts a record contains neither.
+     *
+     * @return array<int,string>
+     */
+    public function rewritableFields(): array;
 }

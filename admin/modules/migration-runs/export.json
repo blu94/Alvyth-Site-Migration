@@ -32,6 +32,14 @@
               ]
             },
             "hint": "Recorded in the bundle as a suggestion. The site importing it decides for itself."
+          },
+          {
+            "ui": { "type": "field", "cols": { "cols": 12, "md": 6 } },
+            "key": "include_media",
+            "type": "switch",
+            "label": "Include the image files",
+            "default": true,
+            "hint": "On, the bundle carries the actual image files and the imported site owns its pictures. Off, it carries only the records, the bundle is far smaller, and the new site loads images from this one until you upload them there. Turn it off if the bundle would be too big to upload."
           }
         ]
       },

@@ -29,7 +29,7 @@ use RuntimeException;
  * no way to place it. Carried as a nested list under the parent, they are written after it, when
  * the parent's id is known.
  */
-class ProductDriver implements ResourceDriver
+class ProductDriver extends BaseDriver
 {
     public function key(): string
     {
@@ -141,7 +141,13 @@ class ProductDriver implements ResourceDriver
      */
     public function volatileFields(): array
     {
-        return ['orders', 'stock'];
+        return array_merge(parent::volatileFields(), ['stock']);
+    }
+
+    /** A product's `data` blob carries gallery image ids and its description carries `<img src>`. */
+    public function rewritableFields(): array
+    {
+        return ['data', 'description'];
     }
 
     /**
@@ -288,33 +294,5 @@ class ProductDriver implements ResourceDriver
         }
     }
 
-    /**
-     * Every translation of a column, so a bundle carries all locales rather than the one the
-     * operator happened to be viewing in.
-     *
-     * @return array<string,string>|null
-     */
-    private function translations(Product $record, string $attribute): ?array
-    {
-        $values = $record->getTranslations($attribute);
 
-        return $values === [] ? null : $values;
-    }
-
-    /**
-     * One usable string out of a value that may be a plain string or a translation map.
-     *
-     * A slug is matched across installs that need not share a current locale, so taking
-     * `app()->getLocale()` would silently fail to match a bundle exported under a different one.
-     */
-    private function firstTranslation(mixed $value): ?string
-    {
-        if (is_array($value)) {
-            $value = reset($value);
-        }
-
-        $value = is_string($value) ? trim($value) : '';
-
-        return $value === '' ? null : $value;
-    }
 }

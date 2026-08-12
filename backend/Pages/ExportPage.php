@@ -41,6 +41,7 @@ class ExportPage
                 $this->drivers->all()
             ),
             'on_conflict'   => 'skip',
+            'include_media' => true,
             'run_id'        => $run?->id,
             'progress'      => $this->progress($run),
             'bundle_path'   => $run?->bundlePath() === null ? null : $this->relative($run),
@@ -79,7 +80,13 @@ class ExportPage
 
             $run = $this->runs->create(Run::DIRECTION_EXPORT, [
                 'modules'     => $modules,
-                'on_conflict' => 'skip',
+                'on_conflict' => ($data['on_conflict'] ?? 'skip') === 'overwrite' ? 'overwrite' : 'skip',
+
+                // Defaults **on**. A bundle whose images did not travel leaves the imported site
+                // pointing at this one, which is a dependency the operator has to opt into
+                // knowingly rather than discover when this hosting is cancelled.
+                'include_media' => ! array_key_exists('include_media', $data)
+                    || (bool) $data['include_media'],
             ]);
         }
 

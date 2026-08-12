@@ -4,9 +4,11 @@ namespace Plugin\SiteMigration\Backend\Services;
 
 use App\Services\Seo\SitemapCache;
 use Illuminate\Database\Eloquent\Model;
+use Plugin\SiteMigration\Backend\Bundle\BundleContext;
 use Plugin\SiteMigration\Backend\Bundle\BundleReader;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Plugin\SiteMigration\Backend\Resources\ResourceDriver;
+use Plugin\SiteMigration\Backend\Resources\SkipRecord;
 use Plugin\SiteMigration\Backend\Runs\IdMap;
 use Plugin\SiteMigration\Backend\Runs\Run;
 use Plugin\SiteMigration\Backend\Support\Canonical;
@@ -30,7 +32,28 @@ class Importer
 {
     public function __construct(
         private readonly DriverRegistry $drivers,
+        private readonly RewritePass $rewrite,
     ) {
+    }
+
+    /**
+     * Hand a driver the bundle it is reading from.
+     *
+     * Only the asset driver acts on this; the rest ignore it. Called per resource rather than
+     * once, because the registry resolves a fresh driver each time and a context set on a
+     * discarded instance is a context nobody sees.
+     */
+    private function driverFor(string $resource, BundleReader $reader): ResourceDriver
+    {
+        $driver = $this->drivers->for($resource);
+
+        $driver->useBundle(new BundleContext(
+            $reader->extractedPath(),
+            $reader->manifest()->includesMedia(),
+            $reader->manifest()->sourceUrl()
+        ));
+
+        return $driver;
     }
 
     /**
@@ -54,7 +77,7 @@ class Importer
         $report    = [];
 
         foreach ($resources as $resource) {
-            $driver = $this->drivers->for($resource);
+            $driver = $this->driverFor($resource, $reader);
 
             $reader->verify($resource);
 
@@ -127,7 +150,16 @@ class Importer
 
             // A refusal, not a filter. An import that silently skipped a resource produces a
             // destination that is *partly* migrated and looks finished.
-            Permissions::assertMayWrite($resources, $run->overwrites());
+            //
+            // Mapped to permission resources first, for the same reason the export gates on them:
+            // `posts` and `email_templates` are guarded by `blogs` and `settings`.
+            Permissions::assertMayWrite(
+                array_values(array_unique(array_map(
+                    fn (string $key) => $this->drivers->for($key)->permissionResource(),
+                    $resources
+                ))),
+                $run->overwrites()
+            );
 
             if ($resources === []) {
                 return $this->fail($run, 'This bundle carries nothing this site can import.');
@@ -156,7 +188,7 @@ class Importer
                 continue;
             }
 
-            $driver = $this->drivers->for($resource);
+            $driver = $this->driverFor($resource, $reader);
             $from   = ($cursor['resource'] ?? null) === $resource ? (int) ($cursor['line'] ?? 0) : 0;
 
             if ($from === 0) {
@@ -197,7 +229,7 @@ class Importer
             $run->set('cursor', $cursor)->save();
         }
 
-        return $this->finish($run, $total);
+        return $this->finish($run, $total, $reader);
     }
 
     /**
@@ -258,6 +290,12 @@ class Importer
             $run->addTally([($existing === null ? 'created' : 'updated') => 1]);
 
             $this->remember($idMap, $resource, $record, $written);
+        } catch (SkipRecord $e) {
+            // Benign: nothing here is wrong, there is simply nothing to place. Counted as skipped
+            // so the final tally still reads as the clean migration it was, and recorded once so
+            // the operator can see *which* records were left out if they care.
+            $run->addTally(['skipped' => 1])
+                ->addErrors(sprintf('%s line %d: %s', $resource, $line, $e->getMessage()));
         } catch (Throwable $e) {
             $run->addTally(['failed' => 1])
                 ->addErrors(sprintf('%s line %d: %s', $resource, $line, $e->getMessage()));
@@ -368,8 +406,27 @@ class Importer
     }
 
     /** @return array<string,mixed> */
-    private function finish(Run $run, int $total): array
+    private function finish(Run $run, int $total, BundleReader $reader): array
     {
+        // **The second pass, and it runs exactly once — here, at the end.** Every id this bundle
+        // placed is now known, which is the precondition it could not have earlier: a page's
+        // builder node pointing at asset 12 can only be repaired once this install knows what 12
+        // became. Running it per step would rewrite records against a half-built map.
+        try {
+            $rewritten = $this->rewrite->run($run, $reader->manifest(), $reader);
+
+            if ($rewritten !== []) {
+                $run->set('rewritten', $rewritten);
+            }
+        } catch (Throwable $e) {
+            // The records are already written and correct in every respect except their embedded
+            // references. Failing the whole run here would report a successful import as a failure;
+            // saying what went wrong lets the operator re-run, which is safe because the pass is
+            // idempotent.
+            $run->addErrors('The records were imported, but repairing embedded links and images '
+                . 'failed: ' . $e->getMessage() . ' Re-running the import will retry it safely.');
+        }
+
         // **Write through the owning repository, never straight to `metas`** is the rule that
         // keeps the eight `rememberForever` settings keys from going stale. Content has no such
         // repository seam, and `SitemapCache` versions its keys rather than flushing — which

@@ -122,10 +122,8 @@ class Permissions
     {
         self::assertMayRun();
 
-        $verbs = $overwriting ? ['create', 'update'] : ['create'];
-
         foreach ($resources as $resource) {
-            foreach ($verbs as $verb) {
+            foreach (self::writeVerbs($resource, $overwriting) as $verb) {
                 if (self::allows($resource . '.' . $verb)) {
                     continue;
                 }
@@ -139,5 +137,41 @@ class Permissions
                 ));
             }
         }
+    }
+
+    /**
+     * The write verbs to demand for a resource, narrowed to the ones it actually declares.
+     *
+     * **Not a fixed `['create', 'update']`.** Core's `settings` resource — which gates email
+     * templates — declares only `view` and `update`, because the six templates always exist and
+     * writing one is always an update. Demanding `settings.create` would refuse every operator
+     * alive, including a super admin's own admin colleagues, for a permission that is not merely
+     * ungranted but *not defined anywhere*.
+     *
+     * A resource core does not describe at all keeps the ordinary pair, so a driver added later
+     * fails closed rather than being waved through.
+     *
+     * @return array<int,string>
+     */
+    private static function writeVerbs(string $resource, bool $overwriting): array
+    {
+        $declared = (array) config('settings.permissions.' . $resource, []);
+
+        $has = static fn (string $verb) => $declared === []
+            || in_array($resource . '.' . $verb, $declared, true);
+
+        $verbs = [];
+
+        if ($has('create')) {
+            $verbs[] = 'create';
+        }
+
+        if (($overwriting || $verbs === []) && $has('update')) {
+            $verbs[] = 'update';
+        }
+
+        // A resource declaring neither is not writable by anyone through this package, and saying
+        // so with `create` produces the clearest refusal available.
+        return $verbs === [] ? ['create'] : $verbs;
     }
 }

@@ -72,6 +72,12 @@ class BundleReader
         return Manifest::fromArray($data);
     }
 
+    /** Where the bundle was unpacked, for the drivers that read files beside the data. */
+    public function extractedPath(): string
+    {
+        return $this->extractedTo;
+    }
+
     /** Unpack, once. Cheap to call repeatedly: a step that resumes finds the files already there. */
     public function extract(): void
     {
