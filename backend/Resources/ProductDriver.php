@@ -144,6 +144,42 @@ class ProductDriver extends BaseDriver
         return array_merge(parent::volatileFields(), ['stock']);
     }
 
+    /**
+     * A colliding product takes a free SKU rather than being thrown away.
+     *
+     * The SKU is a plain column, not a translation map, so this is the simple case — but it is
+     * also the one where the duplicate is most visible to an operator, which is the point: two
+     * products that both claimed `HAT-1` become `HAT-1` and `HAT-1-2`, and somebody can decide
+     * which is which. Silently dropping the incoming one leaves nothing to decide about.
+     *
+     * @param  array<string,mixed>  $record
+     * @return array<string,mixed>
+     */
+    public function renameForCollision(array $record): array
+    {
+        $taken = static fn (string $candidate) => $candidate !== ''
+            && Product::withTrashed()->where('sku', $candidate)->exists();
+
+        $record['sku'] = Collision::freeKey((string) ($record['sku'] ?? ''), $taken);
+
+        // **The variants have to come with it.** A renamed parent gets a fresh row with no
+        // variants, so each of its variants is inserted anew — and a variant's SKU is unique
+        // across the whole table, not within its parent. Leaving them alone meant the parent
+        // landed and then every variant hit the unique index, so the product arrived without the
+        // sizes and colours that make it a product. Found by importing one.
+        //
+        // A variant with no SKU is left alone: it has nothing to collide with.
+        foreach ((array) ($record['variants'] ?? []) as $index => $variant) {
+            $sku = (string) ($variant['sku'] ?? '');
+
+            if ($sku !== '') {
+                $record['variants'][$index]['sku'] = Collision::freeKey($sku, $taken);
+            }
+        }
+
+        return $record;
+    }
+
     /** A product's `data` blob carries gallery image ids and its description carries `<img src>`. */
     public function rewritableFields(): array
     {

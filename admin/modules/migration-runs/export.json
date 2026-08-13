@@ -1,37 +1,23 @@
 [
   {
     "ui": { "type": "section", "icon": "tabler-package-export", "cols": 12, "class": "pa-5" },
-    "name": "What travels",
-    "subtitle": "Tick what you want to take with you, then press Export. Nothing secret goes into a bundle — no gateway keys, no mail password, no sessions, no audit log.",
+    "name": "Export this site",
+    "subtitle": "Everything travels by default — content, media, settings, themes, plugins and accounts. Leave the box below empty and you get the whole site.\n\nPress Export, then Download when it finishes. A large site takes more than one press.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },
         "elements": [
           {
             "ui": { "type": "field", "cols": 12, "multiple": true, "chips": true, "closableChips": true },
-            "key": "modules",
+            "key": "exclude",
             "type": "autocomplete",
-            "label": "Include",
-            "placeholder": "Choose what to include",
+            "label": "Leave out",
+            "placeholder": "Nothing — export everything",
             "multiple": true,
             "chips": true,
-            "options": { "url": "/admin/modules/migration-runs/options", "master": "content" },
-            "hint": "Records are matched on their own natural key when they land — a product by its SKU — never by database id, so importing the same bundle twice updates rather than duplicates.",
-            "rules": ["required", "array"]
-          },
-          {
-            "ui": { "type": "field", "cols": { "cols": 12, "md": 6 } },
-            "key": "on_conflict",
-            "type": "select",
-            "label": "If a record is already there",
-            "default": "skip",
-            "options": {
-              "items": [
-                { "title": "Leave it alone", "value": "skip" },
-                { "title": "Overwrite it", "value": "overwrite" }
-              ]
-            },
-            "hint": "Recorded in the bundle as a suggestion. The site importing it decides for itself."
+            "options": { "url": "/admin/modules/migration-runs/options", "master": "all" },
+            "hint": "Anything you name here is not in the bundle. Everything else is, including anything added to this plugin in a future version — which is why this asks what to leave out rather than what to take.",
+            "rules": ["nullable", "array"]
           },
           {
             "ui": { "type": "field", "cols": { "cols": 12, "md": 6 } },
@@ -39,7 +25,7 @@
             "type": "switch",
             "label": "Include the image files",
             "default": true,
-            "hint": "On, the bundle carries the actual image files and the imported site owns its pictures. Off, it carries only the records, the bundle is far smaller, and the new site loads images from this one until you upload them there. Turn it off if the bundle would be too big to upload."
+            "hint": "On, the bundle carries the actual files and the new site owns its pictures. Off, it carries only the records, the bundle is far smaller, and the new site loads images from this one until you upload them there."
           }
         ]
       },
@@ -56,39 +42,23 @@
     ]
   },
   {
-    "ui": { "type": "section", "icon": "tabler-users", "cols": 12, "class": "pa-5" },
-    "name": "Records about people",
-    "subtitle": "Empty by default, and worth leaving that way unless you are genuinely moving a whole site. These are not content you wrote — they are people's details, and a bundle containing them is a personal-data export the moment it leaves this building.\n\nAccounts arrive on the other site unable to sign in: the password is replaced with one nobody holds, so each person resets it themselves. Nothing else authentication-related travels at all — no sessions, no two-factor secrets, no roles. Somebody on the other site has to grant those deliberately.",
-    "elements": [
-      {
-        "ui": { "type": "row", "dense": false },
-        "elements": [
-          {
-            "ui": { "type": "field", "cols": 12, "multiple": true, "chips": true, "closableChips": true },
-            "key": "records",
-            "type": "autocomplete",
-            "label": "Also include",
-            "placeholder": "Nothing — recommended",
-            "multiple": true,
-            "chips": true,
-            "options": { "url": "/admin/modules/migration-runs/options", "master": "records" },
-            "hint": "Orders and invoices are not offered: an imported invoice would carry this site's numbering, and the other site computes its next number from its own rows — so the two collide silently until somebody finds two invoices sharing a number.",
-            "rules": ["nullable", "array"]
-          }
-        ]
-      }
-    ]
-  },
-  {
     "ui": { "type": "section", "icon": "tabler-key", "cols": 12, "class": "pa-5" },
     "name": "Credentials",
-    "subtitle": "Off by default. Your payment gateway keys, mail password and AI key are never in a bundle unless you turn this on — and then only sealed under a passphrase you choose.\n\nCopying live gateway keys to a staging site means staging can charge real cards. Send the passphrase to the other site separately from the file itself: together in one email, the encryption protects nobody.",
+    "subtitle": "Off by default. Your payment gateway keys, mail password and AI key are never in a bundle unless you turn this on — and then only sealed under a passphrase you choose.\n\nSend the passphrase to the other site separately from the file itself: together in one email, the encryption protects nobody.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },
         "elements": [
           {
-            "ui": { "type": "field", "cols": 12 },
+            "ui": {
+              "type": "field",
+              "cols": 12,
+              "confirm": {
+                "type": "danger",
+                "title": "Include your live credentials?",
+                "text": "Your payment gateway keys, mail password and AI key will be encrypted into this bundle.\n\nCopying live gateway keys to a staging site means that site can charge real cards. Only do this if you are moving the shop itself.\n\nThe passphrase is never stored. Lose it and the credentials in the bundle cannot be recovered by anyone, including you."
+              }
+            },
             "key": "include_credentials",
             "type": "switch",
             "label": "Include my payment, mail and AI credentials",
@@ -101,7 +71,7 @@
             "type": "password",
             "label": "Passphrase",
             "placeholder": "At least 12 characters",
-            "hint": "Never stored anywhere — not on this server, not in the bundle, not in the log. If you lose it the credentials in the bundle cannot be recovered by anyone, including you."
+            "hint": "Never stored anywhere — not on this server, not in the bundle, not in the log."
           },
           {
             "ui": { "type": "field", "cols": { "cols": 12, "md": 6 }, "show_if": "include_credentials,true" },
@@ -118,7 +88,7 @@
   {
     "ui": { "type": "section", "icon": "tabler-progress", "cols": 12, "class": "pa-5" },
     "name": "Progress",
-    "subtitle": "A large site takes more than one press. Each press works for about twenty seconds, writes down where it got to, and stops — so a run never dies half-way through with nothing to show for it. Press Export again to carry on.",
+    "subtitle": "Each press works for about twenty seconds, writes down where it got to, and stops — so a run never dies half-way through with nothing to show for it. Press Export again to carry on.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },
@@ -130,12 +100,6 @@
             "label": "State"
           },
           {
-            "ui": { "type": "field", "cols": 12, "valueClass": "text-body-2" },
-            "key": "bundle_path",
-            "type": "display",
-            "label": "Bundle written to"
-          },
-          {
             "ui": { "type": "field", "cols": 12 },
             "key": "errors_text",
             "type": "textarea",
@@ -145,13 +109,30 @@
             "placeholder": "Nothing to report."
           }
         ]
+      },
+      {
+        "ui": { "type": "row", "dense": true },
+        "elements": [
+          {
+            "ui": { "type": "button", "color": "success", "icon": "tabler-download", "size": "large", "show_if": "can_download,true" },
+            "action": "save",
+            "endpoint": "/admin/modules/migration-runs/page/export-download",
+            "method": "POST",
+            "label": "Download the bundle"
+          }
+        ]
+      },
+      {
+        "ui": { "type": "row", "dense": false },
+        "elements": [
+          {
+            "ui": { "type": "field", "cols": 12, "valueClass": "text-body-2" },
+            "key": "download_url",
+            "type": "display",
+            "label": "Download link"
+          }
+        ]
       }
     ]
-  },
-  {
-    "ui": { "type": "section", "icon": "tabler-lock", "cols": 12, "class": "pa-5" },
-    "name": "Where the bundle goes",
-    "subtitle": "The bundle is written under storage/app/site-migration on this server, which is not reachable from the web. Fetch it over SFTP or your host's file manager and carry it to the other site.\n\nThere is no download button, and that is deliberate rather than unfinished: the only place this platform can serve a file from is the public folder, and a bundle left there is readable by anyone who knows the address.",
-    "elements": []
   }
 ]

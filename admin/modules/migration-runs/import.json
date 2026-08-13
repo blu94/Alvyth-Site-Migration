@@ -13,7 +13,7 @@
               "cols": 12,
               "props": {
                 "maxFiles": 1,
-                "maxFilesize": 256,
+                "maxFilesize": 512,
                 "acceptedFiles": ".zip,application/zip,application/x-zip-compressed",
                 "usage": "MIGRATION_BUNDLE"
               }
@@ -48,32 +48,20 @@
   {
     "ui": { "type": "section", "icon": "tabler-filter", "cols": 12, "class": "pa-5" },
     "name": "What to bring in",
-    "subtitle": "Leave this empty to import everything the bundle carries. Anything you leave out has its data file never opened, so narrowing an import is cheaper, not just smaller.",
+    "subtitle": "Everything in the bundle comes in unless you name it here. Anything you leave out has its data file never opened, so narrowing an import is cheaper, not just smaller.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },
         "elements": [
           {
             "ui": { "type": "field", "cols": 12, "multiple": true, "chips": true, "closableChips": true },
-            "key": "modules",
+            "key": "exclude",
             "type": "autocomplete",
-            "label": "Only these",
-            "placeholder": "Everything in the bundle",
+            "label": "Leave out",
+            "placeholder": "Nothing — bring in everything the bundle carries",
             "multiple": true,
             "chips": true,
-            "options": { "url": "/admin/modules/migration-runs/options", "master": "content" },
-            "rules": ["nullable", "array"]
-          },
-          {
-            "ui": { "type": "field", "cols": 12, "multiple": true, "chips": true, "closableChips": true },
-            "key": "records",
-            "type": "autocomplete",
-            "label": "Records about people",
-            "placeholder": "Nothing — recommended",
-            "multiple": true,
-            "chips": true,
-            "options": { "url": "/admin/modules/migration-runs/options", "master": "records" },
-            "hint": "Only what the bundle actually carries can be brought in. Imported accounts cannot sign in until each person resets their own password, and they arrive with no role — grant those yourself, deliberately.",
+            "options": { "url": "/admin/modules/migration-runs/options", "master": "all" },
             "rules": ["nullable", "array"]
           },
           {
@@ -83,19 +71,34 @@
             "label": "Passphrase, if the bundle carries credentials",
             "placeholder": "Leave empty unless it does",
             "hint": "Read bundle will tell you whether this one has any. Credentials are applied last, so a wrong passphrase costs nothing that already imported — they are skipped, you are told, and this site's existing keys are left exactly as they were."
-          },
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "ui": { "type": "section", "icon": "tabler-alert-triangle", "cols": 12, "class": "pa-5" },
+    "name": "When a record clashes",
+    "subtitle": "Sometimes a record in the bundle has the same identity as one already here — the same SKU, the same slug, the same discount code.\n\nBy default nothing is lost on either side: the incoming record is added alongside under a free name, and you can merge the two afterwards knowing you still have both. Nothing is ever silently dropped.",
+    "elements": [
+      {
+        "ui": { "type": "row", "dense": false },
+        "elements": [
           {
-            "ui": { "type": "field", "cols": { "cols": 12, "md": 6 } },
-            "key": "on_conflict",
-            "type": "select",
-            "label": "If a record is already here",
-            "default": "skip",
-            "options": {
-              "items": [
-                { "title": "Leave mine alone", "value": "skip" },
-                { "title": "Overwrite mine", "value": "overwrite" }
-              ]
+            "ui": {
+              "type": "field",
+              "cols": 12,
+              "confirm": {
+                "type": "danger",
+                "title": "Overwrite this site's own records?",
+                "text": "Where a record in the bundle has the same identity as one already here, the version on THIS site will be replaced by the one in the bundle. That is not reversible — only pages keep a snapshot you can go back to. Leave this off and nothing here is touched: a clashing record is added alongside under a free name, so no data is lost from either site.",
+                "mirror": ["overwrite_acknowledged"]
+              }
             },
+            "key": "on_conflict_overwrite",
+            "type": "switch",
+            "label": "Overwrite my records when they clash",
+            "default": false,
             "hint": "Overwriting also requires permission to update each resource, not just permission to run a migration."
           }
         ]
@@ -140,7 +143,7 @@
             "key": "preview_text",
             "type": "textarea",
             "label": "What would change",
-            "rows": 4,
+            "rows": 5,
             "readonly": true,
             "placeholder": "Press Preview to see what this bundle would do."
           },
@@ -160,7 +163,7 @@
   {
     "ui": { "type": "section", "icon": "tabler-shield-check", "cols": 12, "class": "pa-5" },
     "name": "What this will not do",
-    "subtitle": "Records are matched on their natural key, never on database id, so importing the same bundle twice updates rather than duplicates.\n\nEvery resource in the bundle is checked against your own permission for it. Being allowed to run a migration is not, on its own, permission to rewrite the catalogue.\n\nNothing secret travels in a bundle: no gateway keys, no SMTP password, no sessions, no audit log.",
+    "subtitle": "No record in the bundle is ever discarded. If it clashes with one here it is either added alongside under a free name, or — when you turn overwriting on — it replaces the one here. There is no third option where something quietly disappears.\n\nEvery resource in the bundle is checked against your own permission for it. Being allowed to run a migration is not, on its own, permission to rewrite the catalogue.\n\nImported accounts arrive unable to sign in and with no role. A paid plugin's licence is bound to a domain, so plugins arrive needing re-licensing on this one.",
     "elements": []
   }
 ]

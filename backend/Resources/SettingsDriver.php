@@ -230,6 +230,18 @@ class SettingsDriver extends BaseDriver
     }
 
     /**
+     * A settings group is a singleton.
+     *
+     * Two `APPLICATION_SETTING` rows is not a thing that can exist, so a collision here means the
+     * operator is replacing configuration rather than acquiring a second copy of it. Renaming the
+     * group to dodge the clash would write a settings row no repository ever reads.
+     */
+    public function mergesOnCollision(): bool
+    {
+        return true;
+    }
+
+    /**
      * Application settings carry a logo and a favicon by asset id.
      *
      * **`data`, not `values`.** The rewrite pass walks the *model's* attributes, and the model here

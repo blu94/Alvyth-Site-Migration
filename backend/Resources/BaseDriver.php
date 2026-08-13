@@ -45,6 +45,48 @@ abstract class BaseDriver implements ResourceDriver
         return ['title', 'subtitle', 'slug', 'description'];
     }
 
+    /**
+     * Give a colliding record a free slug, which is what most drivers key on.
+     *
+     * Overridden by the drivers whose identity is not a slug — `sku` for products, `code` for
+     * discounts, the number for invoices — and by `UserDriver`, which cannot rename at all.
+     *
+     * @param  array<string,mixed>  $record
+     * @return array<string,mixed>
+     */
+    public function renameForCollision(array $record): array
+    {
+        $key = $this->naturalKey();
+
+        if (! array_key_exists($key, $record)) {
+            return $record;
+        }
+
+        $record[$key] = Collision::freeTranslatedKey(
+            $record[$key],
+            fn (string $candidate) => $this->locateBySlug($this->modelClass(), $candidate) !== null
+        );
+
+        return $record;
+    }
+
+    /** Most resources are genuinely two records when two claim one name. */
+    public function mergesOnCollision(): bool
+    {
+        return false;
+    }
+
+    /**
+     * The model this driver writes, taken from its own export query.
+     *
+     * Derived rather than declared so a driver cannot get the two out of step — the query is
+     * already the authority on what this resource is.
+     */
+    protected function modelClass(): string
+    {
+        return $this->exportQuery()->getModel()::class;
+    }
+
     public function volatileFields(): array
     {
         // `orders` is a display position that operators reshuffle locally, and `user_id` is

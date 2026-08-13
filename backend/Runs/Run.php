@@ -3,6 +3,7 @@
 namespace Plugin\SiteMigration\Backend\Runs;
 
 use Illuminate\Support\Facades\File;
+use Plugin\SiteMigration\Backend\Resources\Collision;
 
 /**
  * One export or one import, from the button press to the last record written.
@@ -188,14 +189,27 @@ class Run
             'records'             => [],
             'include_media'       => true,
             'include_credentials' => false,
-            'on_conflict'         => 'skip',
+
+            // **Keep both by default**, never "skip". Skipping meant discarding the incoming
+            // record, which is the one outcome a migration must not silently produce.
+            'on_conflict'            => Collision::KEEP_BOTH,
+            'overwrite_acknowledged' => false,
         ], (array) $this->get('selection', []));
     }
 
-    /** Whether the operator asked for an overwrite when a record already exists. */
+    /**
+     * Whether the operator asked for an overwrite when a record already exists.
+     *
+     * Requires **both** the choice and the acknowledgement the confirmation dialog mirrors onto the
+     * form. Reading only the first would let a hand-built POST overwrite a site without ever
+     * meeting the warning, which is the one thing the dialog exists to prevent.
+     */
     public function overwrites(): bool
     {
-        return ($this->selection()['on_conflict'] ?? 'skip') === 'overwrite';
+        $selection = $this->selection();
+
+        return ($selection['on_conflict'] ?? null) === Collision::OVERWRITE
+            && ($selection['overwrite_acknowledged'] ?? false) === true;
     }
 
     /**
@@ -206,7 +220,11 @@ class Run
     public function tally(): array
     {
         return array_merge(
-            ['created' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0],
+            // `renamed` is its own count rather than folded into `created`, because the two mean
+            // different things to an operator: `created` is a record that was not here, `renamed`
+            // is one that was here under a name somebody else had claimed. Only the second needs
+            // looking at afterwards.
+            ['created' => 0, 'updated' => 0, 'renamed' => 0, 'skipped' => 0, 'failed' => 0],
             (array) $this->get('tally', [])
         );
     }

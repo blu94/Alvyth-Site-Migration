@@ -135,6 +135,15 @@ class EmailTemplateDriver extends BaseDriver
         return $key;
     }
 
+    /**
+     * There are exactly six templates and each is identified by which message it is. A second
+     * "order confirmation" is not a record, it is a bug — nothing would ever send it.
+     */
+    public function mergesOnCollision(): bool
+    {
+        return true;
+    }
+
     /** A template body carries images and links to pages on the source install. */
     public function rewritableFields(): array
     {

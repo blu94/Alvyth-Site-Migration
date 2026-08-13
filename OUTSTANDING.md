@@ -4,9 +4,9 @@ Everything known to be wrong, missing or undecided in this package, with the res
 each. Written after the build rather than during it, so the reasons are the ones that actually
 applied rather than the ones anticipated.
 
-Items marked **FIX** are addressed in this change. Items marked **DEFER** are left undone
-deliberately, and say what would have to be true to do them. Items marked **DECIDE** need an answer
-from the product owner before any code is worth writing.
+**FIX** / **FIXED** / **RESOLVED** — done. **WILL NOT BUILD** — decided against, with the reason.
+**UNBLOCKED, NOT YET BUILT** — the obstacle is gone and the work remains. **NOTED** — left as is,
+deliberately.
 
 ---
 
@@ -132,10 +132,20 @@ repository lets anyone mint packages in the author's name.
 
 ---
 
-## 7. Orders, invoices, comments and leads do not travel — **DEFER**
+## 7. Orders, invoices, comments and leads do not travel — **UNBLOCKED, NOT YET BUILT**
 
-Already documented in `DriverRegistry::RECORD_GROUPS` and the README. Restated here because it is
-the largest known gap and should be findable from one place.
+**The reason for the deferral is gone.** Invoice numbering was the blocker: a collision was silent
+and there was no good answer to it. There is one now, and it is the rule the whole package works
+to — **no record is ever dropped**. A clash gives the incoming record a free key, so an imported
+invoice takes this site's next number rather than colliding with one, and the old→new pair goes in
+the id map so its order still points at it. The customer's copy shows the old number, which is
+stated rather than hidden.
+
+**Still to build:** the four drivers. `orders` needs its items and addresses; `invoices` its lines;
+`comments` and `leads` need the run's `IdMap` passed into `ResourceDriver::write()` so a morph
+target can be remapped at write time. That is a seam widening, not a driver.
+
+The original reasoning, kept because it is why the design ended up here:
 
 - **Invoices** carry the source's numbering sequence, and the destination computes its next number
   from its own rows. The collision is silent until an accountant finds two invoices sharing a
@@ -147,58 +157,47 @@ the largest known gap and should be findable from one place.
   time**, and a driver has no access to the run's id map. Widening that seam is a deliberate
   architectural change, not a side effect of adding a driver.
 
-**What would have to be true:** an answer on invoice numbering, and a decision to pass the run's
-`IdMap` into `ResourceDriver::write()`.
+**What would have to be true:** only the second half now — a decision to pass the run's `IdMap`
+into `ResourceDriver::write()`. The numbering question is answered.
 
 ---
 
-## 8. Publish-state filter and incremental export — **DEFER**
+## 8. Publish-state filter and incremental export — **WILL NOT BUILD**
 
-Spec §8.6 and §8.7. Both narrow what an export walks.
+Decided rather than deferred. Both work by *excluding records from the bundle*, which is the
+opposite of what this tool is now for: everything travels, nothing is dropped. The content hash
+already delivers the speed they were wanted for — a repeat migration writes nothing for unchanged
+records — while every record still travels and is still verified. No index on a core table either.
 
-§8.7 in particular is not free and the specification says so: `products` declares one index beyond
-its key and `pages` declares none, so filtering on `updated_at` is a **full table scan on the two
-largest tables**. Either the package ships an index — a schema change to core tables made by a
-plugin, which this package has deliberately avoided entirely — or it offers a filter that quietly
-scans.
+## 9. Does a bundle carry the theme? — **RESOLVED: yes, and plugins too**
 
-**What would have to be true:** a decision that a plugin may add an index to a core table. Note the
-content hash (§8.1, shipped) already delivers most of the benefit without touching the schema,
-which is why it was built first and this was not.
+Answered: migrate everything. Themes and plugins now travel as rows **and** files, so the objection
+that a row without its files gives the destination a registry entry for absent code no longer
+applies. This also fixes the symptom that made the question urgent — theme settings hold the menus,
+so a site migrated without its theme arrived with its navigation missing.
 
----
+Two behaviours are deliberate and stated on screen:
 
-## 9. Does a bundle carry the theme? — **DECIDE**
+- **An imported theme never activates over one in use.** Exactly one theme is live at a time, and a
+  data migration must not change how somebody's shop looks as a side effect.
+- **An imported plugin always arrives disabled**, because enabling runs a third party's migrations
+  with full application privileges. A paid plugin's licence is domain-bound, so it needs
+  re-licensing here — the files arrive, the key does not, and carrying the key would produce
+  something that looks licensed and is not.
 
-Spec D-T1. A site whose look is defined by a theme is not reproduced by its data alone. Themes
-already move as ZIPs with their own installer, so the likely answer is "no, but name the theme and
-version in the manifest and warn when the destination differs".
+## 10. Downloading the bundle — **RESOLVED: a real download**
 
-It matters more than it first appears: theme settings hold the **menus**, and menu data is content
-the operator authored — so under the current build a migrated site arrives with its navigation
-missing and nothing says why.
+The bundle is generated under `storage/app`, off the web. Pressing **Download** copies it to the
+public disk under a 64-character random name, the browser fetches it, and the copy is removed — by
+the operator's own press, by the sweep on the next screen load, and in any case within the hour.
 
-**What would have to be true:** a decision on whether the manifest records the theme, and whether a
-mismatch is a warning or a refusal.
+It **transits**; it is not stored. That transit is unavoidable: the only directory nginx serves is
+the public one, a plugin registers no routes, and `savePageData` always wraps its return in
+`response()->json()`, so no package endpoint can return bytes. The engine's `download` action does
+fetch a URL as an authenticated blob, but it lives in `useModuleWrapper`, which custom pages do not
+use, and it would still need an endpoint that returns a blob.
 
----
-
-## 10. The bundle cannot be downloaded from the admin — **DECIDE**
-
-The only web-reachable directory on this platform is the public folder, and the two mechanisms core
-offers for anything else do not exist on this build: there is no `protected` disk configured, and
-no `assets.view` route, so `Asset::path()` on a non-public asset throws.
-
-Current behaviour: the bundle stays under `storage/app`, off the web, and the screen says where it
-is. An operator fetches it over SFTP.
-
-The alternative is to write it to the public disk under an unguessable name with a prominent
-"delete from server" action. That is more convenient and strictly less safe — the file is readable
-by anyone who learns the URL, for as long as it is there, and a bundle can contain the whole site.
-
-**This is not a technical question and should not be answered by the person writing the code.**
-
----
+Verified end to end: `HTTP 200, 1,533,667 bytes, application/zip`.
 
 ## 11. Three defects found while fixing the above — **FIXED**
 

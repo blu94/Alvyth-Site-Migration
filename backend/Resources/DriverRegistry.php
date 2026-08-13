@@ -53,7 +53,12 @@ class DriverRegistry
         // going wrong soonest, so they land after the content they describe rather than before it.
         'settings'        => SettingsDriver::class,
 
-        // Opt-in, and separated below rather than merely placed here — see RECORD_GROUPS.
+        // Packages rather than records: a row **and** a directory of files each. Late, because
+        // nothing else references them and because restoring files is the slowest thing here.
+        'themes'          => ThemeDriver::class,
+        'plugins'         => PluginDriver::class,
+
+        // Records about people. Not separated by position — by RECORD_GROUPS below.
         'users'           => UserDriver::class,
     ];
 
@@ -87,6 +92,25 @@ class DriverRegistry
     public function contentKeys(): array
     {
         return array_values(array_diff($this->keys(), self::RECORD_GROUPS));
+    }
+
+    /**
+     * Everything, minus what the operator excluded.
+     *
+     * **The selection model is exclusion, not inclusion**, which is the shape All-in-One WP
+     * Migration uses and is the right default for a tool whose job is "move my site". An operator
+     * asked to *choose* what travels has to know the answer in advance, and anything they forget is
+     * missing on the destination with nothing to say so. Asked instead what to *leave out*, the
+     * failure mode inverts: forget something and it travels anyway.
+     *
+     * @param  array<int,string>  $excluded
+     * @return array<int,string>
+     */
+    public function everythingExcept(array $excluded): array
+    {
+        $excluded = array_values(array_filter($excluded, 'is_string'));
+
+        return array_values(array_diff($this->keys(), $excluded));
     }
 
     /** Resources that are records about people, ticked by nobody unless they mean it. */

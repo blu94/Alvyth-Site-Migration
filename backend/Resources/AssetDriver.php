@@ -327,6 +327,18 @@ class AssetDriver extends BaseDriver
     }
 
     /**
+     * A content-hash collision means the byte-for-byte identical file is already here.
+     *
+     * That is not two records sharing a name — it is one picture. Writing a second copy under a
+     * suffixed filename is precisely the duplication hashing exists to prevent, so this merges and
+     * refreshes the describing columns instead.
+     */
+    public function mergesOnCollision(): bool
+    {
+        return true;
+    }
+
+    /**
      * `size` and `format` describe the bytes, which the content hash already identifies, and
      * `featured` is placement on *this* site rather than content that travelled. `source_path`,
      * `filename` and `has_bytes` describe where the file came from, not what it is.

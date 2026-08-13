@@ -6,6 +6,7 @@ use App\Models\Asset;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Plugin\SiteMigration\Backend\Bundle\BundleReader;
+use Plugin\SiteMigration\Backend\Resources\Collision;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Plugin\SiteMigration\Backend\Runs\Run;
 use Plugin\SiteMigration\Backend\Runs\RunStore;
@@ -57,11 +58,9 @@ class ImportPage
 
         return [
             'bundle'         => [],
-            'module_options' => $this->drivers->options($this->drivers->contentKeys()),
-            'record_options' => $this->drivers->options($this->drivers->recordKeys()),
-            'modules'      => [],
-            'records'      => [],
-            'on_conflict'  => 'skip',
+            'exclude'                => [],
+            'on_conflict_overwrite'  => false,
+            'overwrite_acknowledged' => false,
             'run_id'       => $run?->id,
             'inspection'   => $this->inspection($run),
             'progress'     => $this->progress($run),
@@ -170,18 +169,24 @@ class ImportPage
     {
         $selection = $run->selection();
 
-        $selection['on_conflict'] = ($data['on_conflict'] ?? 'skip') === 'overwrite' ? 'overwrite' : 'skip';
+        // **Both halves are required for an overwrite.** The switch is the choice; the mirrored
+        // flag is proof the confirmation dialog was accepted. Reading only the switch would let a
+        // hand-built POST overwrite a site without ever meeting the warning, which is the one thing
+        // the dialog exists to prevent.
+        $selection['on_conflict'] = (bool) ($data['on_conflict_overwrite'] ?? false)
+            ? Collision::OVERWRITE
+            : Collision::KEEP_BOTH;
 
-        $modules = array_values(array_filter(
-            (array) ($data['modules'] ?? []),
+        $selection['overwrite_acknowledged'] = (bool) ($data['overwrite_acknowledged'] ?? false);
+
+        $excluded = array_values(array_filter(
+            (array) ($data['exclude'] ?? []),
             fn ($key) => is_string($key) && $this->drivers->has($key)
         ));
 
-        $selection['modules'] = $modules;
-        $selection['records'] = array_values(array_filter(
-            (array) ($data['records'] ?? []),
-            fn ($key) => is_string($key) && in_array($key, $this->drivers->recordKeys(), true)
-        ));
+        $selection['exclude'] = $excluded;
+        $selection['modules'] = $this->drivers->everythingExcept($excluded);
+        $selection['records'] = [];
 
         $run->set('selection', $selection)->save();
 
@@ -246,11 +251,11 @@ class ImportPage
         $asset = $this->locateUpload($data);
 
         $run = $this->runs->create(Run::DIRECTION_IMPORT, [
-            'modules'     => array_values(array_filter(
-                (array) ($data['modules'] ?? []),
+            'modules'     => $this->drivers->everythingExcept(array_values(array_filter(
+                (array) ($data['exclude'] ?? []),
                 fn ($key) => is_string($key) && $this->drivers->has($key)
-            )),
-            'on_conflict' => ($data['on_conflict'] ?? 'skip') === 'overwrite' ? 'overwrite' : 'skip',
+            ))),
+            'on_conflict' => Collision::KEEP_BOTH,
         ]);
 
         $this->claim($run, $asset);

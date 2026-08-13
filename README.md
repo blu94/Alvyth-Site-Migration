@@ -9,13 +9,19 @@ Staging → production. An agency template → a client's site. A shop rebuilt o
 
 ## What it does
 
-**Export.** Choose what to include, press once, and the plugin walks your data into a zip under
-`storage/app/site-migration/`. A large site takes more than one press — each one works for about
-twenty seconds, writes down where it got to, and stops.
+**Export.** Everything travels by default — content, media, settings, themes, plugins and accounts.
+Name anything you want **left out**, press Export, then Download to save the bundle to your own
+computer. A large site takes more than one press; each works for about twenty seconds, writes down
+where it got to, and stops.
 
 **Import.** Upload a bundle, read what is in it, preview exactly what would change, then write.
 Records find themselves on the destination by their **natural key** — a product by its SKU, never
 by database id — so importing the same bundle twice updates rather than duplicating.
+
+**No record in a bundle is ever discarded.** If one clashes with a record already here you get one
+of two outcomes, and both keep everything: it replaces the local version (behind a confirmation
+dialog you have to accept), or it is written alongside under a free name — `HAT-1` and `HAT-1-2`.
+There is no third option where something quietly disappears.
 
 **History.** What this install has exported and imported, with tallies and outcomes.
 
@@ -42,7 +48,9 @@ by database id — so importing the same bundle twice updates rather than duplic
 
 ## What travels
 
-Content and configuration, ticked by default:
+**Everything, unless you exclude it.** The picker asks what to leave *out*, not what to take —
+forget something and it travels anyway, which is the safer failure. A resource added in a later
+version is carried by every existing habit rather than quietly omitted from it.
 
 | Resource | Matched on |
 |---|---|
@@ -58,11 +66,8 @@ Content and configuration, ticked by default:
 | Tax zones, carrying their rates | `slug` |
 | Discounts | `code` |
 | Settings — application, localization, email branding, e-invoice profile | group |
-
-Records about people, ticked by nobody unless they mean it:
-
-| Resource | Matched on |
-|---|---|
+| Themes — the row **and** the files, so the menus come too | `slug` |
+| Plugins — the row and the package directory | `slug` |
 | Customer and staff accounts | `email` |
 
 **Nothing is matched by database id**, ever. An id means nothing outside the database that issued
@@ -76,38 +81,46 @@ Two consequences worth knowing:
 - **Media is matched on content hash, not path.** Two installs store the same photograph under
   different paths, so matching on path would re-import every image on every migration. Candidates
   are narrowed by size and format first, so nothing hashes a whole library to find one match.
+- **An account merges, it never duplicates.** Every other resource resolves a clash by keeping both
+  under two names. An email address will not take that — it *is* the person, and `jane+2@…` would
+  be a second account nobody can sign into.
+
+Two things arrive deliberately inert:
+
+- **An imported theme never activates over one already in use.** Exactly one theme is live at a
+  time, and a data migration must not change how your shop looks as a side effect. It arrives
+  installed; switching to it is one click you make.
+- **An imported plugin always arrives disabled**, because enabling runs a third party's migrations
+  with full application privileges. **A paid plugin's licence is bound to a domain**, so the files
+  arrive and the key does not — it needs re-licensing here. Carrying the key would give you
+  something that looks licensed and is not.
 
 ### What is deliberately not here
 
-**Orders and invoices.** An imported invoice carries the source's numbering, and the destination
-computes its next number from its own rows — so the two collide silently until an accountant finds
-two invoices sharing a number. Choosing between renumbering (which breaks the copy the customer
-already has) and preserving (which breaks the sequence) is a product decision, and orders are
-meaningless without the invoices and items attached to them.
+**Orders, invoices, comments and leads.** Not yet built. The invoice-numbering problem that blocked
+them is solved — nothing is dropped, so an imported invoice takes this site's next free number —
+but orders need their items and addresses, and comments and leads need the run's id map available
+at write time, which is a seam widening rather than a driver.
 
-**Comments and leads.** Both point at what they are about — a post, a product, a form — through ids
-that must be remapped *at write time*, and a driver has no access to the run's id map. That seam is
-worth widening deliberately rather than as a side effect.
-
-**Themes, plugins, the activity log, sessions, tokens, revisions, jobs.** Install-local by meaning,
-or packages with their own installers and licences.
+**The activity log, sessions, tokens, revisions, jobs.** Install-local by meaning. A record of what
+happened on another site is not a fact about this one.
 
 ---
 
 ## Two things to know before you use it
 
-### There is no download button
+### The download transits the public folder
 
-The bundle is written under `storage/app/site-migration/<run>/bundle.zip`, which is not reachable
-from the web. Fetch it over SFTP or your host's file manager.
+The bundle is generated under `storage/app/site-migration/`, off the web. Pressing **Download**
+copies it to the public folder under a 64-character random name, your browser fetches it, and the
+copy is removed — by your own press, by the sweep on the next screen load, and in any case within
+the hour.
 
-This is a platform limit rather than an omission. A plugin registers no routes, so it cannot stream
-a file, and the one upload/download path core offers — an `Asset` — is unusable in both directions
-on Ovynt 1.3.0: there is no `protected` disk configured, and no `assets.view` route, so
-`Asset::path()` on a non-public asset throws `RouteNotFoundException`. The only remaining place a
-file can be served from is the **public** folder, where a bundle would be readable by anyone who
-guessed the URL. For a file that can contain your whole site, that is not a default this package
-picks on your behalf.
+That transit is unavoidable rather than lazy. A plugin registers no routes, so it cannot stream a
+file; `savePageData` always wraps its return in `response()->json()`, so no package endpoint can
+return bytes; and the one upload/download path core offers — an `Asset` — is unusable on Ovynt
+1.3.0, where there is no `protected` disk and no `assets.view` route, so `Asset::path()` on a
+non-public asset throws. The public folder is the only directory nginx serves.
 
 ### Uploading is briefly public
 
@@ -122,7 +135,7 @@ So: press Read bundle straight away rather than leaving the page open.
 
 ## Permissions
 
-The plugin declares `site_migration` with `view`, `create` and `delete`.
+The plugin declares `site_migration` with `view` and `create`.
 
 **That gate is necessary and nowhere near sufficient**, and it is the most important thing in the
 package. An import writes products. If it checked only `site_migration.create`, then letting

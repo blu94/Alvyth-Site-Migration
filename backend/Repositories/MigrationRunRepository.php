@@ -83,6 +83,9 @@ class MigrationRunRepository
         $registry = app(DriverRegistry::class);
 
         return [
+            // `all` is what the export screen offers, because its picker asks what to *leave out*
+            // and anything movable can be left out.
+            'all'     => $registry->options($registry->keys()),
             'content' => $registry->options($registry->contentKeys()),
             'records' => $registry->options($registry->recordKeys()),
             'runs'    => app(HistoryPage::class)->deleteOptions(),
@@ -124,7 +127,8 @@ class MigrationRunRepository
     public function savePageData(string $slug, array $data)
     {
         return match ($slug) {
-            'export'         => app(ExportPage::class)->save($data),
+            'export'          => app(ExportPage::class)->save($data),
+            'export-download' => app(ExportPage::class)->publish($data),
             'import'         => app(ImportPage::class)->inspect($data),
             'import-preview' => app(ImportPage::class)->preview($data),
             'import-apply'   => app(ImportPage::class)->apply($data),

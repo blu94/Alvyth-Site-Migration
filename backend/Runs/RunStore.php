@@ -167,7 +167,10 @@ class RunStore
         file_put_contents(
             $this->root() . '/last-export.json',
             json_encode(array_intersect_key($selection, array_flip([
-                'modules', 'records', 'include_media', 'include_credentials', 'on_conflict',
+                // The **exclusion** is what is remembered, not the resulting inclusion. A version
+                // that added a driver would otherwise replay last week's inclusion list and
+                // silently leave the new resource out of every future export.
+                'exclude', 'include_media', 'on_conflict',
             ])), JSON_PRETTY_PRINT)
         );
     }

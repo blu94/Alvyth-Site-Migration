@@ -5,6 +5,7 @@ namespace Plugin\SiteMigration\Tests;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use PHPUnit\Framework\Attributes\Test;
+use Plugin\SiteMigration\Backend\Resources\Collision;
 use Plugin\SiteMigration\Backend\Runs\Run;
 use Plugin\SiteMigration\Backend\Runs\RunStore;
 use Plugin\SiteMigration\Backend\Services\Exporter;
@@ -247,7 +248,13 @@ class RoundTripTest extends TestCase
     {
         $run = app(RunStore::class)->create(Run::DIRECTION_IMPORT, [
             'modules'     => ['products'],
-            'on_conflict' => $overwrite ? 'overwrite' : 'skip',
+            'on_conflict' => $overwrite ? Collision::OVERWRITE : Collision::KEEP_BOTH,
+
+            // **Both halves, or it is not an overwrite.** The acknowledgement is what the
+            // confirmation dialog mirrors onto the form, and `Run::overwrites()` requires it — so a
+            // test that set only the mode would quietly exercise the keep-both path and pass for
+            // the wrong reason. It did exactly that once, which is why this is spelled out.
+            'overwrite_acknowledged' => $overwrite,
         ]);
 
         copy($bundle, $run->directory . '/bundle.zip');

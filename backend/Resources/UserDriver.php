@@ -140,6 +140,28 @@ class UserDriver extends BaseDriver
     }
 
     /**
+     * **An account is never renamed to dodge a collision, and never duplicated.**
+     *
+     * Every other resource resolves a clash by keeping both under two names. An email address will
+     * not take that treatment: it is not a label on a record, it *is* the person, and
+     * `jane+2@example.com` would be a second account with nobody behind it — unreachable by
+     * password reset, invisible to the customer, and permanently confusing in the orders list.
+     *
+     * So a matching email merges into the account already here, whichever mode the operator chose.
+     * Nothing is lost, because there was only ever one person to lose.
+     */
+    public function mergesOnCollision(): bool
+    {
+        return true;
+    }
+
+    /** @param array<string,mixed> $record */
+    public function renameForCollision(array $record): array
+    {
+        return $record;
+    }
+
+    /**
      * `status` is local: an account this site suspended must not be reactivated by a bundle that
      * happens to predate the suspension.
      */

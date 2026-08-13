@@ -259,17 +259,44 @@ class Importer
         try {
             $existing = $driver->locate($record);
 
+            // **A collision never drops the incoming record.** The earlier behaviour — leave mine
+            // alone, discard theirs — reported success while losing data the operator had asked
+            // this tool to carry, which is the one outcome a migration must not produce.
+            //
+            // So when the operator has not chosen to overwrite, the incoming record is written
+            // *alongside* under a key nothing is using: an invoice takes this site's next number,
+            // a product a free SKU, a slug a suffix. Two records that claimed one name become two
+            // records with two names, which the operator can merge afterwards knowing nothing was
+            // lost — a position they cannot get back to once a row has been silently skipped.
             if ($existing !== null && ! $run->overwrites()) {
-                $run->addTally(['skipped' => 1]);
+                if ($driver->mergesOnCollision()) {
+                    // Except where a collision means "the same thing": one email is one person,
+                    // and `jane+2@example.com` would be a second account nobody can sign into.
+                    $written = $driver->write($record, $existing);
 
-                // Mapped even though nothing was written, and this is not an optimisation — it
-                // is the difference between a working rewrite pass and a broken one. A skipped
-                // record still *landed* somewhere: it is the row this bundle's id refers to on
-                // this install. Leaving it out meant a page's builder node pointing at product
-                // 12 had no way to learn that product 12 is #880 here, so the reference stayed
-                // pointing at whatever #12 happens to be — the exact class of silent corruption
-                // the id map exists to prevent.
-                $this->remember($idMap, $resource, $record, $existing);
+                    $run->addTally(['updated' => 1]);
+                    $this->remember($idMap, $resource, $record, $written);
+
+                    return;
+                }
+
+                // The content hash still short-circuits an identical record, because writing a
+                // second copy of something byte-identical is a duplicate nobody asked for.
+                if ($this->unchanged($driver->toRecord($existing), $record, $driver->volatileFields())) {
+                    $run->addTally(['skipped' => 1]);
+                    $this->remember($idMap, $resource, $record, $existing);
+
+                    return;
+                }
+
+                $renamed = $driver->renameForCollision($record);
+                $written = $driver->write($renamed, null);
+
+                $run->addTally(['renamed' => 1]);
+
+                // Mapped from the record's **original** id, so anything that referenced it on the
+                // source still resolves to where it actually landed here.
+                $this->remember($idMap, $resource, $record, $written);
 
                 return;
             }
@@ -538,20 +565,34 @@ class Importer
         $parts = [];
 
         foreach ($report as $row) {
+            // The clash wording is the whole point of the preview, so it says what will actually
+            // happen rather than naming a mode. "Kept alongside" is the sentence an operator needs
+            // to understand that nothing of theirs is going and nothing of the bundle's is either.
             $parts[] = sprintf(
                 '%s: %d new, %d %s, %d unchanged%s',
                 $row['label'],
                 $row['new'],
                 $row['update'],
-                $overwriting ? 'will be overwritten' : 'already here and left alone',
+                $overwriting
+                    ? 'will REPLACE what is here'
+                    : 'clash and will be added alongside under a free name',
                 $row['unchanged'],
                 $row['unplaceable'] ? sprintf(', %d cannot be placed', $row['unplaceable']) : ''
             );
         }
 
-        return $parts === []
-            ? 'This bundle carries nothing this site can import.'
-            : 'Nothing has been written yet. ' . implode(' · ', $parts);
+        if ($parts === []) {
+            return 'This bundle carries nothing this site can import.';
+        }
+
+        return 'Nothing has been written yet. ' . implode(' · ', $parts)
+            . ($overwriting
+                ? "
+
+Overwriting is ON. Records here will be replaced and that cannot be undone, except for pages."
+                : "
+
+Nothing here will be replaced and nothing in the bundle will be dropped.");
     }
 
     private function reader(Run $run): BundleReader

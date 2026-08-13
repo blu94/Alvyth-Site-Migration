@@ -102,6 +102,26 @@ class DiscountDriver extends BaseDriver
     }
 
     /**
+     * A colliding discount takes a free code.
+     *
+     * The code is what a customer types, so two discounts cannot share one — but the incoming
+     * discount is still somebody's configured offer, and the operator can retire whichever of the
+     * two they meant to keep once both are visible.
+     *
+     * @param  array<string,mixed>  $record
+     * @return array<string,mixed>
+     */
+    public function renameForCollision(array $record): array
+    {
+        $record['code'] = Collision::freeKey(
+            (string) ($record['code'] ?? ''),
+            static fn (string $candidate) => Discount::withTrashed()->where('code', $candidate)->exists()
+        );
+
+        return $record;
+    }
+
+    /**
      * A discount's rules can name products or categories by id.
      *
      * Those are ids on the *source*, so they need the rewrite pass exactly as a builder node does —

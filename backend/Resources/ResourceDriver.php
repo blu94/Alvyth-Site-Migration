@@ -89,6 +89,33 @@ interface ResourceDriver
     public function locate(array $record): ?Model;
 
     /**
+     * Rewrite an incoming record so its natural key no longer collides, or return it unchanged.
+     *
+     * Called only when the operator chose **not** to overwrite. The contract is that the returned
+     * record is safe to `write()` as a *new* row: nothing is dropped, and the collision is resolved
+     * by renaming rather than by discarding either side.
+     *
+     * A driver returning the record untouched is saying its identity cannot meaningfully be
+     * renamed — `UserDriver` does exactly that, because an email address *is* the person and
+     * `jane+2@example.com` would be a second account nobody can sign into. Such a driver must then
+     * merge instead, which it signals with {@see mergesOnCollision()}.
+     *
+     * @param  array<string,mixed>  $record
+     * @return array<string,mixed>
+     */
+    public function renameForCollision(array $record): array;
+
+    /**
+     * Whether a collision on this resource means "the same thing", not "two things sharing a name".
+     *
+     * True for accounts: one email is one person, so an incoming record updates the existing row
+     * even when the operator asked not to overwrite, because the alternative is an unusable
+     * duplicate. False for everything else, where two records claiming one slug are genuinely two
+     * records.
+     */
+    public function mergesOnCollision(): bool;
+
+    /**
      * Write one line.
      *
      * Returns the model written, so the caller can record its id in the run's map. Throwing is
