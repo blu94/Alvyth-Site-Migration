@@ -263,7 +263,24 @@ principle, returned a 403 the first time it was pressed, and would have shipped 
 
 ---
 
-## 12. Uninstalling leaves the run directory behind — **NOTED**
+## 12. Imported order numbers can sit ahead of the local sequence — **NOTED**
+
+Core numbers a new order `ORD-` + `max(id) + 1` (`GeneratesSequentialNumber`), and an import
+preserves the source's numbers wherever they are free — so a destination whose own ids are low can
+end up holding imported numbers *above* its next derived one. The first checkout after such an
+import may derive a number an imported order already holds.
+
+**Why this is left alone.** Core's trait already retries with an advancing offset, five attempts
+deep, and a failed insert still consumes an auto-increment id — so every collision moves `max(id)`
+upward and the window closes by itself. The pathological case is a large *contiguous* block of
+imported numbers sitting just above the local counter, where a checkout could exhaust its five
+retries; on the real shapes of this problem (fresh-site migration, where ids and numbers land
+together; or an established shop, whose counter is already high) the gap is small or nonexistent.
+The alternatives were worse: a plugin issuing `ALTER TABLE … AUTO_INCREMENT` against a core table
+is DDL from a package, and renumbering imported orders to fit the local sequence would break the
+number on every customer's confirmation email for a problem that mostly cannot occur.
+
+## 13. Uninstalling leaves the run directory behind — **NOTED**
 
 The package owns no database tables, so `uninstall.drop_tables` is absent and there is nothing for
 Ovynt to clean up. `storage/app/site-migration` survives an uninstall.
