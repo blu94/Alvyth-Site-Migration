@@ -45,6 +45,11 @@ class DriverRegistry
         'posts'           => PostDriver::class,
         'forms'           => FormDriver::class,
         'email_templates' => EmailTemplateDriver::class,
+
+        // Presentation the operator designed, and a dependency: an invoice names the template it
+        // was rendered with, so the template has to be here before the invoice arrives.
+        'invoice_templates' => InvoiceTemplateDriver::class,
+
         'shipping'        => ShippingDriver::class,
         'tax'             => TaxDriver::class,
         'discounts'       => DiscountDriver::class,

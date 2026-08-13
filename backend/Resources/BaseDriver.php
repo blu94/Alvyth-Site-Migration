@@ -204,7 +204,25 @@ abstract class BaseDriver implements ResourceDriver
      */
     protected function locateBySlug(string $modelClass, ?string $slug, bool $withTrashed = true): ?Model
     {
-        if ($slug === null || $slug === '') {
+        return $this->locateByTranslatable($modelClass, 'slug', $slug, $withTrashed);
+    }
+
+    /**
+     * The same lookup against any translatable column.
+     *
+     * Extracted from {@see locateBySlug()} because `slug` is not universal: an invoice template is
+     * a `Meta` row with no slug at all, and its only human-meaningful identifier is its **title**.
+     * Generalising the one method is what stops that driver copying the locale-scan logic — which
+     * is subtle enough (`orWhere('col->locale', …)` inside a closure, per lesson #6 on `orWhere`
+     * binding) that a second copy would be a second thing to get wrong.
+     */
+    protected function locateByTranslatable(
+        string $modelClass,
+        string $column,
+        ?string $value,
+        bool $withTrashed = true,
+    ): ?Model {
+        if ($value === null || $value === '') {
             return null;
         }
 
@@ -222,16 +240,16 @@ abstract class BaseDriver implements ResourceDriver
             $query->withTrashed();
         }
 
-        $direct = (clone $query)->where('slug', $slug)->first();
+        $direct = (clone $query)->where($column, $value)->first();
 
         if ($direct !== null) {
             return $direct;
         }
 
         return (clone $query)
-            ->where(function ($sub) use ($slug) {
+            ->where(function ($sub) use ($column, $value) {
                 foreach ($this->candidateLocales() as $locale) {
-                    $sub->orWhere('slug->' . $locale, $slug);
+                    $sub->orWhere($column . '->' . $locale, $value);
                 }
             })
             ->first();

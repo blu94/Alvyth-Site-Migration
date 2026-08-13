@@ -63,9 +63,9 @@ on new hosting.
 
 ## 2. Current state
 
-**75 tests, 1593 assertions, all passing.** Every screen driven end to end in a real browser,
-including a full 834-record export → upload → preview → import round trip of the dev site into
-itself (finishing 0 created, 0 updated, 834 skipped, 0 failed).
+**77 tests, 1623 assertions, all passing.** Every screen driven end to end in a real browser,
+including a full 838-record export → upload → preview → import round trip of the dev site into
+itself (finishing 0 created, 0 updated, 838 skipped, 0 failed).
 
 ### Commits (oldest first)
 
@@ -78,7 +78,9 @@ itself (finishing 0 created, 0 updated, 834 skipped, 0 failed).
 | `0b0cfc8` | Version floor, run deletion, staging prune, remembered selection, empty-dropdown fix |
 | `54c84d1` | Exclusion model, never-drop collisions, overwrite dialog, themes + plugins, real download |
 | `60c7532` | HANDOVER.md |
-| *(latest)* | Orders, invoices, comments and leads; the id-map seam; the merge-path hash fix |
+| `db42b7f` | Orders, invoices, comments and leads; the id-map seam; the merge-path hash fix |
+| `97ad6f7` | The order-numbering window, recorded as NOTED |
+| *(latest)* | Invoice templates, and an imported invoice keeping the design it was issued under |
 
 ### What works
 
@@ -94,21 +96,23 @@ application/zip`.
 **Import** — upload → Read bundle (manifest only, no extraction) → Preview (writes nothing) →
 Import. Resumable. Credentials applied last.
 
-**19 resources**, in this dependency order (`DriverRegistry::DRIVERS`):
+**20 resources**, in this dependency order (`DriverRegistry::DRIVERS`):
 
 ```
 categories → tags → assets → products → pages → posts → forms
-→ email_templates → shipping → tax → discounts → settings
+→ email_templates → invoice_templates → shipping → tax → discounts → settings
 → themes → plugins → users → orders → invoices → comments → leads
 ```
 
 Themes and plugins carry **files as well as rows**. Orders carry their items and addresses;
-invoices their lines; comments their threading; leads their form. A colliding invoice or order
-takes the destination's **next number in sequence** — never a `-2` suffix — and keeps the number
-it arrived under in `meta.imported_number` (stripped from the travelling copy and the hash).
-Every driver receives the run's `IdMap` through `useIdMap()`, mirroring `useBundle()`: references
-resolve **map first** (rename-proof), natural key second. See OUTSTANDING.md §7/§7a for the
-decisions and the merge-path hash fix that came out of the browser round trip.
+invoices their lines and the template they were rendered with; comments their threading; leads
+their form. A colliding invoice or order takes the destination's **next number in sequence** —
+never a `-2` suffix — and keeps the number it arrived under in `meta.imported_number` (stripped
+from the travelling copy and the hash). Every driver receives the run's `IdMap` through
+`useIdMap()`, mirroring `useBundle()`: references resolve **map first** (rename-proof), natural key
+second. See OUTSTANDING.md §7/§7a for those decisions and the merge-path hash fix, and §11a for
+invoice templates — a spec §3.1 promise that had never been built and that no document recorded as
+missing until every core model was diffed against the registry.
 
 ### The guarantees, and where they are proven
 
@@ -134,6 +138,8 @@ decisions and the merge-path hash fix that came out of the browser round trip.
 | A comment thread keeps its threading and its target; unplaceable ones say why | `RecordGroupsTest` |
 | A lead lands on its form; a second import writes nothing | `RecordGroupsTest` |
 | Rich records of all four new kinds describe themselves identically twice | `RecordGroupsTest` |
+| An invoice keeps the template it was rendered with | `RecordGroupsTest` |
+| An imported template never takes this site's "main" designation | `RecordGroupsTest` |
 
 ---
 
@@ -278,12 +284,20 @@ git push -u origin master     # or rename to main first, if that is the conventi
 The push was refused by a permission classifier in two sessions now. Ask the user to run it or
 to approve the action.
 
-### 5.2 Orders, invoices, comments and leads — **DONE**
+### 5.2 Every resource the specification promised — **DONE**
 
-All four drivers are built, tested (`RecordGroupsTest`) and browser-checked; the id-map seam is
-widened (`ResourceDriver::useIdMap()`, a `useBundle()` mirror). OUTSTANDING.md §7 records every
-decision; §7a records the merge-path hash fix the browser round trip surfaced. Nothing remains
-here.
+Orders, invoices, comments, leads and invoice templates are all built, tested
+(`RecordGroupsTest`) and browser-checked; the id-map seam is widened
+(`ResourceDriver::useIdMap()`, a `useBundle()` mirror). OUTSTANDING.md §7 records the record-group
+decisions, §7a the merge-path hash fix, §11a invoice templates. Nothing on the specification's
+list remains unbuilt.
+
+**How the last gap was found, because the method is the transferable part.** It was not on any
+to-do list — the way it surfaced was diffing `app/Models/*` against `DriverRegistry::DRIVERS` one
+by one and asking, of each model, "does this travel, and if not is that written down anywhere?".
+Two answers came back wrong: `Blog` looked missing but is `Post` under a type scope (already
+handled, and `PostDriver` says so), and `InvoiceTemplate` was genuinely absent with nothing
+recording it. Re-run that diff whenever core adds a model.
 
 ### 5.3 Smaller things
 

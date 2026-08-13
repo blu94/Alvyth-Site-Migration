@@ -62,6 +62,7 @@ version is carried by every existing habit rather than quietly omitted from it.
 | Posts | `slug` |
 | Forms — the definitions, never the submissions | `slug` |
 | Email templates | `data->key` |
+| Invoice templates — the designed layout invoices are rendered with | `title` |
 | Shipping zones, carrying their methods | `slug` |
 | Tax zones, carrying their rates | `slug` |
 | Discounts | `code` |
@@ -100,11 +101,15 @@ Two consequences worth knowing:
   as itself, not as whichever local record still holds `HAT-1` — and by SKU for products that were
   already here.
 
-Two things arrive deliberately inert:
+Three things arrive deliberately inert:
 
 - **An imported theme never activates over one already in use.** Exactly one theme is live at a
   time, and a data migration must not change how your shop looks as a side effect. It arrives
   installed; switching to it is one click you make.
+- **An imported invoice template never takes the "main" designation** from one this site already
+  chose — the same reasoning, applied to paperwork. A site with no main template of its own does
+  inherit the source's choice, since there is nothing to overrule. An imported invoice still
+  points at the design it was actually issued under, where that design travelled with it.
 - **An imported plugin always arrives disabled**, because enabling runs a third party's migrations
   with full application privileges. **A paid plugin's licence is bound to a domain**, so the files
   arrive and the key does not — it needs re-licensing here. Carrying the key would give you
@@ -273,7 +278,7 @@ The tests use `DatabaseTransactions`, never `RefreshDatabase`.
 | `RewritePassTest` | Gate 7 — a source host is rewritten out of a builder node, the pass is idempotent, and URLs are left alone when media did not travel |
 | `BundleFormatTest` | A newer bundle is refused, a corrupt one is caught, a damaged line does not lose the rest |
 | `PackageManifestTest` | `api` plural, `routeBase` singular, every `rules` an array, no tables |
-| `RecordGroupsTest` | A colliding invoice takes the next number in sequence and keeps the number it arrived under · an order travels with its items and addresses and re-links its products · an order line follows its product through a rename via the id map · a comment thread keeps its threading and its target · an unplaceable comment or lead is skipped with the reason · rich records of all four kinds describe themselves identically eager-loaded and bare |
+| `RecordGroupsTest` | A colliding invoice takes the next number in sequence and keeps the number it arrived under · an order travels with its items and addresses and re-links its products · an order line follows its product through a rename via the id map · a comment thread keeps its threading and its target · an unplaceable comment or lead is skipped with the reason · an invoice keeps the template it was rendered with · an imported template never steals the main designation · rich records of every new kind describe themselves identically eager-loaded and bare |
 
 `DriverSymmetryTest` earns its place: `PageDriver` once returned an empty builder tree for a
 lazily-loaded page, so **every page compared as changed and was rewritten on every migration**,

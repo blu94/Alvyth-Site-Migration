@@ -185,6 +185,7 @@ A record finds itself on the other site by something meaningful, never by its da
 | Discounts | The code customers type |
 | Shipping and tax zones | Their slug |
 | Email templates | Which message they are |
+| Invoice templates | Their title |
 | Themes and plugins | Their slug |
 | Customer accounts | The email address |
 | Orders | The order number |
@@ -202,10 +203,14 @@ photograph is never imported twice even though the two sites file it under diffe
 preview as *cannot be placed* and skipped. If you see that number, give those products a SKU on the
 site you exported from and export again.
 
-Two things arrive deliberately inert:
+Three things arrive deliberately inert:
 
 - **An imported theme never activates over one already in use.** It arrives installed; switching to
   it is one click you make.
+- **An imported invoice template never becomes your main one** if you have already chosen a main
+  template here. If you have not chosen one, the bundle's choice is adopted, since there is nothing
+  to overrule. Your invoices carry the design they were issued under wherever that design travelled
+  with them; where it did not, they fall back to whichever template this site treats as main.
 - **An imported plugin always arrives disabled**, and a paid plugin's licence is bound to a domain,
   so it needs re-licensing here.
 

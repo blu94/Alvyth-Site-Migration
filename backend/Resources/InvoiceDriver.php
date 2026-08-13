@@ -4,6 +4,7 @@ namespace Plugin\SiteMigration\Backend\Resources;
 
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\InvoiceTemplate;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,10 +29,13 @@ use Illuminate\Database\Eloquent\Model;
  * *landed*, not by the number it no longer holds. The number lookup is the fallback for an order
  * that was already here before this run.
  *
- * **`meta.template_id` does not travel.** It names a row in the *source's* metas table, which is
- * some unrelated record here. Stripped on export, preserved on overwrite, and absent on a new
- * invoice — where `InvoicePdfService` falls back to this site's default template, which is the
- * template the operator actually wants their imported paperwork rendered with.
+ * **`meta.template_id` is resolved, not carried.** The raw id names a row in the *source's* metas
+ * table, which is some unrelated record here — but which design an invoice was rendered with is
+ * real information, so it travels as the template's **title** beside the source id, and is
+ * resolved the same way everything else is: id map first (rename-proof), natural key second. An
+ * invoice whose template did not travel keeps whatever this site already had for it, and a new
+ * one simply has no `template_id` — where `InvoicePdfService` falls back to this site's default,
+ * which is the correct answer when the design it wanted is genuinely not here.
  */
 class InvoiceDriver extends BaseDriver
 {
@@ -102,6 +106,13 @@ class InvoiceDriver extends BaseDriver
 
             'notes' => $record->notes,
             'meta'  => $this->portableMeta($record->meta),
+
+            // Which design this invoice was rendered with, as both halves of the resolution: the
+            // source's meta id for the rename-proof map lookup, the template's title for one that
+            // was already here. Both are volatile — the design is a fact about the invoice, but
+            // *which row holds it* is a fact about a database.
+            '_template_source' => data_get($record->meta, 'template_id'),
+            'template'         => $this->templateTitle($record),
 
             // Sorted by id, which is insertion order on both sides — the relation itself carries
             // no ordering, and an unordered list would make the same invoice hash two ways.
@@ -225,10 +236,19 @@ class InvoiceDriver extends BaseDriver
         return Collision::freeKey($prefix . '-' . str_pad((string) ($lastId + 1), 6, '0', STR_PAD_LEFT), $taken);
     }
 
-    /** `_order_source` is the source database's id for the order — plumbing, not content. */
+    /**
+     * The source database's ids for the order and the template are plumbing, not content.
+     *
+     * **`template` is volatile too, and that is the subtle one.** The design an invoice was
+     * rendered with is real information and worth carrying, but a destination that does not have
+     * that template — or that renders through its own default — would otherwise differ from the
+     * bundle in this one field and rewrite every invoice on every migration to change nothing.
+     * The same shape `AssetDriver` documents for `usage`: a difference the write path will never
+     * act on must not be part of the comparison.
+     */
     public function volatileFields(): array
     {
-        return array_merge(parent::volatileFields(), ['_order_source']);
+        return array_merge(parent::volatileFields(), ['_order_source', '_template_source', 'template']);
     }
 
     /** Notes are free text and meta carries tax lines — both can embed source-host URLs. */
@@ -298,8 +318,8 @@ class InvoiceDriver extends BaseDriver
 
     /**
      * The meta to store: what travelled, plus the local keys the bundle deliberately does not
-     * carry — an overwritten invoice keeps its template, and a renumbered one keeps the record
-     * of the number it arrived under.
+     * carry — the renumbered invoice's original number, and a template id resolved to *this*
+     * install's rows.
      *
      * @param  array<string,mixed>  $record
      * @param  Invoice|null  $existing
@@ -315,7 +335,86 @@ class InvoiceDriver extends BaseDriver
             }
         }
 
+        $template = $this->resolveTemplate($record);
+
+        if ($template !== null) {
+            $meta['template_id'] = $template;
+        }
+
         return $meta === [] ? null : $meta;
+    }
+
+    /**
+     * The local id of the design this invoice was rendered with, or null to leave it alone.
+     *
+     * Map first — so an imported template that took a free title still receives its own invoices —
+     * then the title, for a design that was already here. Null when neither answers, which leaves
+     * an overwritten invoice pointing at whatever it pointed at before and a new one pointing at
+     * nothing: `InvoicePdfService` then falls back to this site's default, which is the honest
+     * answer when the design is genuinely absent.
+     *
+     * @param  array<string,mixed>  $record
+     */
+    private function resolveTemplate(array $record): ?int
+    {
+        $mapped = $this->mapped('invoice_templates', $record['_template_source'] ?? 0);
+
+        if ($mapped !== null) {
+            return $mapped;
+        }
+
+        $title = $this->firstTranslation($record['template'] ?? null);
+
+        if ($title === null) {
+            return null;
+        }
+
+        $template = $this->locateByTranslatable(InvoiceTemplate::class, 'title', $title);
+
+        return $template === null ? null : (int) $template->getKey();
+    }
+
+    /**
+     * Template id => its title, loaded once for the whole walk.
+     *
+     * @var array<int,array<string,string>|string|null>|null
+     */
+    private ?array $templateTitles = null;
+
+    /**
+     * The title of the template an invoice names, read without assuming the row still exists.
+     *
+     * **Not `Invoice::template()`, and the difference is a rule rather than a preference.** That
+     * method is a plain `where('id', …)->first()` — one query per invoice, so a shop with four
+     * thousand invoices would pay four thousand extra queries to write four thousand lines. It
+     * cannot be eager-loaded either, because it is a method rather than a relation, and
+     * `exportQuery()` has nowhere to declare it.
+     *
+     * A site has a handful of invoice templates, never thousands, so the whole set is read once
+     * and answered from memory — the same shape `AssetDriver` uses for content hashes and
+     * `RewritePass` for asset paths. An invoice naming a template since deleted answers null,
+     * which is ordinary: an invoice outlives its design.
+     *
+     * @return array<string,string>|string|null
+     */
+    private function templateTitle(Invoice $record): array|string|null
+    {
+        $id = (int) data_get($record->meta, 'template_id');
+
+        if ($id <= 0) {
+            return null;
+        }
+
+        if ($this->templateTitles === null) {
+            $this->templateTitles = InvoiceTemplate::query()
+                ->get(['id', 'title'])
+                ->mapWithKeys(fn (InvoiceTemplate $t) => [
+                    (int) $t->getKey() => $this->translations($t, 'title'),
+                ])
+                ->all();
+        }
+
+        return $this->templateTitles[$id] ?? null;
     }
 
     /**

@@ -263,6 +263,46 @@ principle, returned a 403 the first time it was pressed, and would have shipped 
 
 ---
 
+## 11a. Invoice templates never travelled — **FIXED**
+
+Found by diffing every model in `app/Models` against the driver registry rather than by reading
+the to-do list, which had nothing to say about it. The original specification listed invoice
+templates in §3.1 — *"Presentation | email templates, email branding, invoice templates"* — beside
+two things that were built; this one was quietly never done, and no document recorded the gap.
+
+It mattered more once invoices travelled. A shop that designed its own invoice and then migrated
+would arrive with core's seeded default and every invoice it had ever issued silently re-rendered
+under somebody else's design.
+
+**`InvoiceTemplateDriver`**, and three decisions inside it:
+
+- **Identity is the title**, because there is nothing else. An invoice template is a `Meta` row
+  under the STI type `INVOICE_TEMPLATE` with no slug column and no key inside its blob — unlike an
+  email template, whose `data->key` says which message it is. The title is what the operator typed
+  and what the picker shows them.
+- **Gated by `invoices`**, which is the resource core itself chose. `TemplateController` records
+  why: there is no `invoice_templates` key in `config/settings.php`, so naming one resolves to
+  `super_admin` alone. Deriving the permission from the driver key would have asked
+  `can('invoice_templates.view')` — false for everybody — and the resource would have been
+  silently dropped from every export. `DriverSymmetryTest` now covers it.
+- **`data->is_default` never travels inside the blob.** Which template is "main" is a decision
+  about *this* install, exactly like theme activation, so the flag is lifted out of `data`,
+  carried as a plain field, marked volatile, and honoured on import **only when this site has no
+  main template of its own**. Left inside the hashed blob it would also have made every template
+  whose designation differs read as changed on every migration forever — the silent shape
+  `AssetDriver` documents for `usage`.
+
+**And the invoice now keeps the design it was rendered with.** `meta.template_id` was previously
+stripped and left to fall back to the destination's default, which was the only honest answer while
+templates could not travel. It now resolves like every other reference — id map first
+(rename-proof), title second — and falls back to the default only when the design genuinely is not
+here. `template` and `_template_source` are both volatile, or an invoice rendered through a
+fallback would rewrite itself on every migration.
+
+One performance note worth keeping: `Invoice::template()` is a method, not a relation, so it cannot
+be eager-loaded and calling it per record is an N+1 across the whole export. The titles are read
+once per walk and answered from memory, the same shape `AssetDriver` uses for content hashes.
+
 ## 12. Imported order numbers can sit ahead of the local sequence — **NOTED**
 
 Core numbers a new order `ORD-` + `max(id) + 1` (`GeneratesSequentialNumber`), and an import

@@ -7,6 +7,7 @@ use App\Models\Comment;
 use App\Models\Form;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\InvoiceTemplate;
 use App\Models\Lead;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -346,6 +347,12 @@ class RecordGroupsTest extends TestCase
 
         $order = $this->makeOrder($product, $customer);
 
+        $template = InvoiceTemplate::create([
+            'title'  => ['en' => 'Symmetry ' . bin2hex(random_bytes(3))],
+            'status' => 'active',
+            'data'   => ['paper_size' => 'A4'],
+        ]);
+
         $invoice = Invoice::create([
             'invoice_number' => 'INV-SYM-' . bin2hex(random_bytes(3)),
             'order_id'       => $order->id,
@@ -354,7 +361,10 @@ class RecordGroupsTest extends TestCase
             'issued_at'      => now()->subDay(),
             'due_at'         => now()->addWeek(),
             'grand_total'    => 45,
-            'meta'           => ['template_id' => 999, 'tax_lines' => [['label' => 'SST', 'amount' => '2.70']]],
+            'meta'           => [
+                'template_id' => $template->id,
+                'tax_lines'   => [['label' => 'SST', 'amount' => '2.70']],
+            ],
             'user_id'        => $customer->id,
         ]);
 
@@ -390,7 +400,7 @@ class RecordGroupsTest extends TestCase
 
         $registry = app(DriverRegistry::class);
 
-        foreach (['orders', 'invoices', 'comments', 'leads'] as $key) {
+        foreach (['orders', 'invoices', 'comments', 'leads', 'invoice_templates'] as $key) {
             $driver = $registry->for($key);
 
             foreach ($driver->exportQuery()->get() as $eager) {
@@ -411,6 +421,104 @@ class RecordGroupsTest extends TestCase
                 );
             }
         }
+    }
+
+    /**
+     * An invoice template travels, and an imported invoice keeps the design it was rendered with.
+     *
+     * The specification listed invoice templates beside email templates from the start (§3.1) and
+     * they never travelled, which mattered more once invoices did: a migrated shop would arrive
+     * with its own designed paperwork replaced by whatever the destination happened to have.
+     */
+    #[Test]
+    public function an_invoice_keeps_the_template_it_was_rendered_with(): void
+    {
+        $title = 'Design ' . bin2hex(random_bytes(3));
+
+        $template = InvoiceTemplate::create([
+            'title'  => ['en' => $title],
+            'status' => 'active',
+            'data'   => ['paper_size' => 'A4', 'accent' => '#123456'],
+        ]);
+
+        $invoice = Invoice::create([
+            'invoice_number' => 'INV-TPL-' . bin2hex(random_bytes(3)),
+            'status'         => Invoice::STATUS_SENT,
+            'currency'       => 'MYR',
+            'grand_total'    => 10,
+            'meta'           => ['template_id' => $template->id],
+        ]);
+
+        $bundle = $this->export(['invoice_templates', 'invoices']);
+
+        // Both gone, so the import has to recreate the design and re-link the invoice to it.
+        $invoice->forceDelete();
+        $template->delete();
+
+        $run = $this->importRun($bundle, ['invoice_templates', 'invoices']);
+        $this->pressUntilDone(fn () => app(Importer::class)->step($this->reload($run)));
+
+        $this->assertSame(0, $this->reload($run)->tally()['failed']);
+
+        $landedTemplate = InvoiceTemplate::query()->where('title->en', $title)->first();
+
+        $this->assertNotNull($landedTemplate, 'The invoice template did not travel.');
+        $this->assertSame('A4', $landedTemplate->data['paper_size'] ?? null, 'The design lost its settings.');
+
+        $landedInvoice = Invoice::where('invoice_number', $invoice->invoice_number)->first();
+
+        $this->assertNotNull($landedInvoice, 'The invoice did not come back.');
+        $this->assertSame(
+            $landedTemplate->id,
+            (int) ($landedInvoice->meta['template_id'] ?? 0),
+            'The imported invoice does not point at the imported template — it would render with '
+            . "this site's default instead of the design it was issued under."
+        );
+    }
+
+    /**
+     * **An import never takes this site's "main" designation.**
+     *
+     * The same posture as a theme never activating over one in use: which template is main is a
+     * decision about this install, and a data migration must not change how somebody's paperwork
+     * looks as a side effect.
+     */
+    #[Test]
+    public function an_imported_template_does_not_steal_the_main_designation(): void
+    {
+        $incoming = 'Incoming ' . bin2hex(random_bytes(3));
+
+        $source = InvoiceTemplate::create([
+            'title'  => ['en' => $incoming],
+            'status' => 'active',
+            'data'   => ['is_default' => true],
+        ]);
+
+        $bundle = $this->export(['invoice_templates']);
+
+        $source->delete();
+
+        // This site now has its own main template, chosen here.
+        $mine = InvoiceTemplate::create([
+            'title'  => ['en' => 'Mine ' . bin2hex(random_bytes(3))],
+            'status' => 'active',
+            'data'   => ['is_default' => true],
+        ]);
+
+        $run = $this->importRun($bundle, ['invoice_templates']);
+        $this->pressUntilDone(fn () => app(Importer::class)->step($this->reload($run)));
+
+        $landed = InvoiceTemplate::query()->where('title->en', $incoming)->first();
+
+        $this->assertNotNull($landed, 'The template did not travel.');
+        $this->assertFalse(
+            (bool) ($landed->data['is_default'] ?? false),
+            "An imported template took this site's main designation."
+        );
+        $this->assertTrue(
+            (bool) ($mine->fresh()->data['is_default'] ?? false),
+            "This site's own main template was demoted by an import."
+        );
     }
 
     /** The five resources about people are record groups, and none of them is content. */
