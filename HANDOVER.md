@@ -53,7 +53,7 @@ the second install, import it. Staging → production; agency template → clien
 on new hosting.
 
 - **Repo:** `git@github.com:blu94/Ovynt-Site-Migration.git`
-- **Branch:** `master` — ⚠️ **the remote is empty; nothing has ever been pushed.** Six commits are
+- **Branch:** `master` — ⚠️ **the remote is empty; nothing has ever been pushed.** Every commit is
   local only. See §7.
 - **Slug:** `site-migration` → `Plugin\SiteMigration\`
 - **Requires:** Ovynt `>=1.3.0 <2.0.0` (floor measured, not guessed — see §4.4)
@@ -63,7 +63,9 @@ on new hosting.
 
 ## 2. Current state
 
-**67 tests, 1493 assertions, all passing.** Every screen driven end to end in a real browser.
+**75 tests, 1593 assertions, all passing.** Every screen driven end to end in a real browser,
+including a full 834-record export → upload → preview → import round trip of the dev site into
+itself (finishing 0 created, 0 updated, 834 skipped, 0 failed).
 
 ### Commits (oldest first)
 
@@ -75,6 +77,8 @@ on new hosting.
 | `e24c8d8` | Rewrite-pass tests against a foreign source host (gate 7) |
 | `0b0cfc8` | Version floor, run deletion, staging prune, remembered selection, empty-dropdown fix |
 | `54c84d1` | Exclusion model, never-drop collisions, overwrite dialog, themes + plugins, real download |
+| `60c7532` | HANDOVER.md |
+| *(latest)* | Orders, invoices, comments and leads; the id-map seam; the merge-path hash fix |
 
 ### What works
 
@@ -90,15 +94,21 @@ application/zip`.
 **Import** — upload → Read bundle (manifest only, no extraction) → Preview (writes nothing) →
 Import. Resumable. Credentials applied last.
 
-**15 resources**, in this dependency order (`DriverRegistry::DRIVERS`):
+**19 resources**, in this dependency order (`DriverRegistry::DRIVERS`):
 
 ```
 categories → tags → assets → products → pages → posts → forms
 → email_templates → shipping → tax → discounts → settings
-→ themes → plugins → users
+→ themes → plugins → users → orders → invoices → comments → leads
 ```
 
-Themes and plugins carry **files as well as rows**.
+Themes and plugins carry **files as well as rows**. Orders carry their items and addresses;
+invoices their lines; comments their threading; leads their form. A colliding invoice or order
+takes the destination's **next number in sequence** — never a `-2` suffix — and keeps the number
+it arrived under in `meta.imported_number` (stripped from the travelling copy and the hash).
+Every driver receives the run's `IdMap` through `useIdMap()`, mirroring `useBundle()`: references
+resolve **map first** (rename-proof), natural key second. See OUTSTANDING.md §7/§7a for the
+decisions and the merge-path hash fix that came out of the browser round trip.
 
 ### The guarantees, and where they are proven
 
@@ -118,6 +128,12 @@ Themes and plugins carry **files as well as rows**.
 | Migrating is not permission to overwrite | `PermissionIsolationTest` |
 | A newer/corrupt bundle is refused before anything is written | `BundleFormatTest` |
 | `api` plural, `routeBase` singular, `rules` arrays, no tables | `PackageManifestTest` |
+| A colliding invoice takes the next number **in sequence** and keeps the old one | `RecordGroupsTest` |
+| An order travels with items and addresses; lines re-link to products | `RecordGroupsTest` |
+| An order line follows its product **through a rename**, via the id map | `RecordGroupsTest` |
+| A comment thread keeps its threading and its target; unplaceable ones say why | `RecordGroupsTest` |
+| A lead lands on its form; a second import writes nothing | `RecordGroupsTest` |
+| Rich records of all four new kinds describe themselves identically twice | `RecordGroupsTest` |
 
 ---
 
@@ -252,54 +268,40 @@ wrong it silently never sets the flag.
 
 ### 5.1 Push the repo — blocked, needs the user
 
-Six commits are local. The remote is empty.
+Every commit is local. The remote is empty.
 
 ```bash
 cd plugins/site-migration
 git push -u origin master     # or rename to main first, if that is the convention
 ```
 
-The push was refused by a permission classifier in the previous session. Ask the user to run it or
+The push was refused by a permission classifier in two sessions now. Ask the user to run it or
 to approve the action.
 
-### 5.2 Orders and invoices — unblocked, not built
+### 5.2 Orders, invoices, comments and leads — **DONE**
 
-The blocker is gone: nothing is dropped, so an imported invoice takes this site's next free number
-via `Collision::freeKey()` rather than colliding.
+All four drivers are built, tested (`RecordGroupsTest`) and browser-checked; the id-map seam is
+widened (`ResourceDriver::useIdMap()`, a `useBundle()` mirror). OUTSTANDING.md §7 records every
+decision; §7a records the merge-path hash fix the browser round trip surfaced. Nothing remains
+here.
 
-What is needed:
+### 5.3 Smaller things
 
-- **`InvoiceDriver`** — `App\Models\Invoice` + `InvoiceItem`. Natural key is the invoice number.
-  `renameForCollision()` must take the destination's next number in sequence, not a `-2` suffix —
-  invoice numbering is a sequence, not a label. Say on screen that the customer's copy shows the old
-  number.
-- **`OrderDriver`** — `App\Models\Order` + `OrderItem` + `Address`. Items and addresses travel
-  nested under the order, the way variants travel under a product. Orders reference products, which
-  must be resolved by natural key at write time.
-- Both are `RECORD_GROUPS` (about people), so they inherit the PII warnings.
-
-### 5.3 Comments and leads — needs a seam widened first
-
-Both point at what they are about through **ids that must be remapped at write time**, and
-`ResourceDriver::write()` has no access to the run's `IdMap`.
-
-**Do this first:** pass the `IdMap` into `write()`, either as a fourth argument or via a
-`useIdMap(IdMap $map)` setter on `BaseDriver` mirroring `useBundle()`. Then:
-
-- **`CommentDriver`** — `commentable_id`/`commentable_type` remapped through the map.
-- **`LeadDriver`** — `form_id` remapped. Leads are form submissions: personal data, opt-in.
-
-### 5.4 Smaller things
-
-- **Artwork.** `plugin.json` declares none, so Ovynt draws the Tabler icon. Dropping
-  `banner.png` (≈1200×300) and `thumbnail.png` (≈256×256) at the package root is picked up with no
-  manifest change. Raster only — **SVG is refused** (stored XSS against the admin session).
-- **Signing.** `php artisan ovynt:plugin-sign <dir> --key=~/keys/vendor-private.pem`, then zip.
-  Never edit a file afterwards. `plugin.sig` is gitignored deliberately.
+- **Artwork — needs a user decision, do not just make some.** OUTSTANDING.md §1 *rejected*
+  fabricating placeholder images ("inventing a design nobody asked for is worse than the icon"),
+  while an earlier to-do list asked for banner + thumbnail before release. Those conflict. If the
+  user supplies or approves artwork: `banner.png` (≈1200×300) and `thumbnail.png` (≈256×256) at
+  the package root are picked up with no manifest change; raster only — **SVG is refused**
+  (stored XSS against the admin session).
+- **Signing — a release step for the user.** Needs the vendor's private key, which rightly is not
+  on this machine: `php artisan ovynt:plugin-sign <dir> --key=~/keys/vendor-private.pem`, then
+  zip. Never edit a file afterwards. `plugin.sig` is gitignored deliberately.
 - **`docs/migration-runs.md`** is the in-app operator guide and must be updated in the same change
-  as any screen change — that is the project rule, not a follow-up.
+  as any screen change — that is the project rule, not a follow-up. (Rewritten this session: it
+  had drifted from the exclusion model and the real download button, and it now covers the record
+  groups.)
 
-### 5.5 Decided against — do not build without a new decision
+### 5.4 Decided against — do not build without a new decision
 
 **Publish-state filter and incremental "changed since" export.** Both exclude records from the
 bundle, which contradicts "migrate everything, drop nothing". The content hash already delivers the
@@ -341,11 +343,19 @@ MSYS_NO_PATHCONV=1 docker exec ovynt_app \
 Log in as **`tester@ovynt.com` / `password`** — never `admin@ovynt.com` (project rule).
 URLs: `http://localhost:8090/admin/module/migration-runs/page/{export|import|history}`.
 
-Two harness notes that cost time last session:
+Four harness notes that cost time across sessions:
 
 - Playwright's `page.fill()` sets the DOM but a Vuetify **select/autocomplete menu only opens** on
   `mousedown` + `click` dispatched **in-page**, not via `locator.click()`.
+- **Schema-page buttons have the same quirk.** `locator.click()` on Export/Import ran no handler
+  and sent no POST; `mousedown`+`mouseup`+`click` dispatched in-page fires it. But dispatched
+  events also **ignore the disabled state** — pressing again while a step is still in flight runs
+  two steps of one run concurrently, and the seal races the walk (one probe run died exactly
+  that way). Wait for the State line to change before pressing again.
 - Running the PHPUnit suite clears the plugins table and logs the browser out. Log back in after.
+- **The suite also deletes `storage/app/site-migration` entirely** — `TestCase::clearRuns()`
+  removes the run store root, which is one shared filesystem however many databases there are. A
+  dev-site export, bundle included, is gone after any test run. Export again; it is regenerable.
 
 ### After a test run
 

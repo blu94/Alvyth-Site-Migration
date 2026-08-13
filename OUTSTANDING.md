@@ -132,33 +132,61 @@ repository lets anyone mint packages in the author's name.
 
 ---
 
-## 7. Orders, invoices, comments and leads do not travel — **UNBLOCKED, NOT YET BUILT**
+## 7. Orders, invoices, comments and leads do not travel — **RESOLVED: all four built**
 
-**The reason for the deferral is gone.** Invoice numbering was the blocker: a collision was silent
-and there was no good answer to it. There is one now, and it is the rule the whole package works
-to — **no record is ever dropped**. A clash gives the incoming record a free key, so an imported
-invoice takes this site's next number rather than colliding with one, and the old→new pair goes in
-the id map so its order still points at it. The customer's copy shows the old number, which is
-stated rather than hidden.
+**The seam was widened first, then the drivers.** `ResourceDriver::useIdMap()` mirrors
+`useBundle()`: the importer hands every driver the run's id map before use, and `BaseDriver`
+caches one resource's map per instance so resolving a reference is an array lookup, not a file
+scan per record. The map turned out to matter beyond comments and leads — it is the only
+**rename-proof** way to resolve any reference: an order item whose product this same run placed
+alongside a clash as `HAT-1-2` must link to *that* row, not to whichever local record still holds
+`HAT-1`, and a natural-key lookup alone answers the wrong question. Pinned by
+`RecordGroupsTest::an_order_item_follows_its_product_through_a_rename`.
 
-**Still to build:** the four drivers. `orders` needs its items and addresses; `invoices` its lines;
-`comments` and `leads` need the run's `IdMap` passed into `ResourceDriver::write()` so a morph
-target can be remapped at write time. That is a seam widening, not a driver.
+The four drivers, and the decision each one embodies:
 
-The original reasoning, kept because it is why the design ended up here:
+- **`InvoiceDriver` / `OrderDriver`** — identity is the number; a collision takes the
+  destination's **next number in sequence** (`INV-` / `ORD-` plus `max(id) + 1`, advancing past
+  taken numbers, exactly as core numbers a new record), never a `-2` suffix that would sit
+  outside the numbering forever. The number the record arrived under is kept in its own meta
+  (`imported_number`) — stripped from the travelling copy and from the content hash on both
+  sides, or every renumbered record would compare as changed forever. The customer's copy shows
+  the old number; the import screen says so. Items travel nested (delete-and-recreate, core's own
+  `syncItems` semantics — lines have no identity to diff on); addresses attach to the order,
+  never to anyone's address book; `meta.template_id` does not travel (it names a row in the
+  source's metas table) and `InvoicePdfService` falls back to this site's default template.
+- **`CommentDriver`** — no natural key, so identity is the same words at the same moment about
+  the same thing, and a collision **merges**. The morph target travels twice over: the source id
+  for the map, the target's own natural key for records already here. A reply's parent has no
+  natural key at all, so threading resolves only through the map — plus the driver's own note of
+  what it placed this step, because the per-instance cache cannot see rows appended after its
+  first load. A comment whose target resolves to nothing is skipped with the reason.
+- **`LeadDriver`** — gated by `forms` (core's `FormController` guards its lead endpoints with the
+  forms resource; a `leads` permission exists nowhere, and deriving it from the key would silently
+  never travel — same trap as posts/`blogs`). `form_id` is NOT NULL with a cascade, so a lead
+  whose form is not here is skipped with the reason, never attached to somebody else's form. The
+  `data` blob is never rewritten by the rewrite pass: it is a verbatim record of what a person
+  typed, and repairing a URL in it would falsify a submission.
 
-- **Invoices** carry the source's numbering sequence, and the destination computes its next number
-  from its own rows. The collision is silent until an accountant finds two invoices sharing a
-  number. Choosing between renumbering (which breaks the copy the customer already holds) and
-  preserving (which breaks the destination's sequence) is a product decision.
-- **Orders** are meaningless without their items, addresses and invoice, so they cannot land before
-  that question is answered.
-- **Comments and leads** point at what they are about through ids that must be remapped **at write
-  time**, and a driver has no access to the run's id map. Widening that seam is a deliberate
-  architectural change, not a side effect of adding a driver.
+All four are `RECORD_GROUPS` and the wording on both wizards states the PII consequence. Import
+order extends the dependency graph: users → orders → invoices → comments → leads.
 
-**What would have to be true:** only the second half now — a decision to pass the run's `IdMap`
-into `ResourceDriver::write()`. The numbering question is answered.
+**Timestamps travel as content.** `created_at` is excluded from every bundle record by the
+canonical form, but for records about people *when it happened* is the content — an imported
+order dated the day of the migration files a year of sales under one afternoon. Each driver
+carries it explicitly (`placed_at`, `recorded_at`, `commented_at`, `submitted_at`) and writes it
+back to `created_at`.
+
+## 7a. Merged resources rewrote identical records on every repeat import — **FIXED**
+
+Found the way this package finds everything: by using the screens. Importing a site's own bundle
+back into it, the preview said everything was unchanged and the tally then reported **519
+updates** — every asset, account, settings row, theme and plugin rewritten to change nothing.
+`Importer::writeOne()` checked `mergesOnCollision()` *before* the content hash, so merging
+resources never reached the unchanged short-circuit that every other resource enjoyed, on
+exactly the path (`KEEP_BOTH`, the default) an operator actually uses. The check now runs first;
+a repeat import of an unchanged site writes nothing at all — verified in the browser: 0 created,
+0 updated, 834 skipped, 0 failed.
 
 ---
 

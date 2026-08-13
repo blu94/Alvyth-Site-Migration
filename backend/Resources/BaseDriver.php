@@ -4,6 +4,7 @@ namespace Plugin\SiteMigration\Backend\Resources;
 
 use Illuminate\Database\Eloquent\Model;
 use Plugin\SiteMigration\Backend\Bundle\BundleContext;
+use Plugin\SiteMigration\Backend\Runs\IdMap;
 use RuntimeException;
 
 /**
@@ -17,6 +18,25 @@ use RuntimeException;
 abstract class BaseDriver implements ResourceDriver
 {
     protected ?BundleContext $bundle = null;
+
+    protected ?IdMap $idMap = null;
+
+    /**
+     * One resource's mappings, loaded on first use.
+     *
+     * `IdMap::all()` reads its file line by line, so calling it per record would re-scan the map
+     * once for every row this driver writes — an import of ten thousand orders re-reading the
+     * products map ten thousand times. Loaded once per driver instance instead, which is safe
+     * because the import order guarantees a referenced resource is **finished** before anything
+     * that references it starts: nothing is appended to a map after the first read of it.
+     *
+     * The one exception — a resource referencing *itself*, as a comment thread does — cannot rely
+     * on this cache, because parents written after the first load would be missing from it. A
+     * driver with that shape keeps its own record of what it placed this step; see `CommentDriver`.
+     *
+     * @var array<string,array<int,int>>
+     */
+    private array $idMapCache = [];
 
     /**
      * By default the resource key is also the permission resource.
@@ -33,6 +53,36 @@ abstract class BaseDriver implements ResourceDriver
     public function useBundle(BundleContext $context): void
     {
         $this->bundle = $context;
+    }
+
+    /** A no-op for every driver whose records reference nothing. */
+    public function useIdMap(IdMap $map): void
+    {
+        $this->idMap = $map;
+        $this->idMapCache = [];
+    }
+
+    /**
+     * Where a source record's id landed on this install, or null.
+     *
+     * The **rename-proof** half of reference resolution. A natural-key lookup answers "who holds
+     * this key now", which after a KEEP_BOTH collision is the destination's own record rather
+     * than the one this run placed alongside it under a free key. The map answers "where did
+     * *that* record land", which is the question an order item or an invoice's order reference
+     * is actually asking. Callers try this first and fall back to the natural key for records
+     * this run did not place.
+     */
+    protected function mapped(string $resource, mixed $sourceId): ?int
+    {
+        $sourceId = (int) $sourceId;
+
+        if ($this->idMap === null || $sourceId <= 0) {
+            return null;
+        }
+
+        $this->idMapCache[$resource] ??= $this->idMap->all($resource);
+
+        return $this->idMapCache[$resource][$sourceId] ?? null;
     }
 
     /**

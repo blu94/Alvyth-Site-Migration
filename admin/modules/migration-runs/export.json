@@ -2,7 +2,7 @@
   {
     "ui": { "type": "section", "icon": "tabler-package-export", "cols": 12, "class": "pa-5" },
     "name": "Export this site",
-    "subtitle": "Everything travels by default — content, media, settings, themes, plugins and accounts. Leave the box below empty and you get the whole site.\n\nPress Export, then Download when it finishes. A large site takes more than one press.",
+    "subtitle": "Everything travels by default — content, media, settings, themes, plugins, accounts, orders, invoices, comments and form leads. Leave the box below empty and you get the whole site.\n\nAccounts, orders, invoices, comments and leads are records about people, so a bundle carrying them is a personal-data export the moment it leaves this server. Leave them out unless you are moving the shop itself.\n\nPress Export, then Download when it finishes. A large site takes more than one press.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },

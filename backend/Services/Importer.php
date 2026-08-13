@@ -38,13 +38,14 @@ class Importer
     }
 
     /**
-     * Hand a driver the bundle it is reading from.
+     * Hand a driver the bundle it is reading from, and the run's id map.
      *
-     * Only the asset driver acts on this; the rest ignore it. Called per resource rather than
-     * once, because the registry resolves a fresh driver each time and a context set on a
+     * Only the asset driver acts on the bundle context, and only the drivers whose records
+     * reference other records act on the map; the rest ignore both. Called per resource rather
+     * than once, because the registry resolves a fresh driver each time and a context set on a
      * discarded instance is a context nobody sees.
      */
-    private function driverFor(string $resource, BundleReader $reader): ResourceDriver
+    private function driverFor(Run $run, string $resource, BundleReader $reader): ResourceDriver
     {
         $driver = $this->drivers->for($resource);
 
@@ -53,6 +54,8 @@ class Importer
             $reader->manifest()->includesMedia(),
             $reader->manifest()->sourceUrl()
         ));
+
+        $driver->useIdMap($run->idMap());
 
         return $driver;
     }
@@ -78,7 +81,7 @@ class Importer
         $report    = [];
 
         foreach ($resources as $resource) {
-            $driver = $this->driverFor($resource, $reader);
+            $driver = $this->driverFor($run, $resource, $reader);
 
             $reader->verify($resource);
 
@@ -189,7 +192,7 @@ class Importer
                 continue;
             }
 
-            $driver = $this->driverFor($resource, $reader);
+            $driver = $this->driverFor($run, $resource, $reader);
             $from   = ($cursor['resource'] ?? null) === $resource ? (int) ($cursor['line'] ?? 0) : 0;
 
             if ($from === 0) {
@@ -269,22 +272,26 @@ class Importer
             // records with two names, which the operator can merge afterwards knowing nothing was
             // lost — a position they cannot get back to once a row has been silently skipped.
             if ($existing !== null && ! $run->overwrites()) {
-                if ($driver->mergesOnCollision()) {
-                    // Except where a collision means "the same thing": one email is one person,
-                    // and `jane+2@example.com` would be a second account nobody can sign into.
-                    $written = $driver->write($record, $existing);
-
-                    $run->addTally(['updated' => 1]);
-                    $this->remember($idMap, $resource, $record, $written);
+                // The content hash short-circuits an identical record **before** anything else,
+                // merge semantics included. This check once sat below the merge branch, so every
+                // record of a merging resource — each asset, account, comment and lead — was
+                // rewritten on every repeat import to change nothing, while the dry run promised
+                // "unchanged". Found by importing a site into itself in a browser: the preview
+                // said nothing would change and the tally then reported 519 updates.
+                if ($this->unchanged($driver->toRecord($existing), $record, $driver->volatileFields())) {
+                    $run->addTally(['skipped' => 1]);
+                    $this->remember($idMap, $resource, $record, $existing);
 
                     return;
                 }
 
-                // The content hash still short-circuits an identical record, because writing a
-                // second copy of something byte-identical is a duplicate nobody asked for.
-                if ($this->unchanged($driver->toRecord($existing), $record, $driver->volatileFields())) {
-                    $run->addTally(['skipped' => 1]);
-                    $this->remember($idMap, $resource, $record, $existing);
+                if ($driver->mergesOnCollision()) {
+                    // Where a collision means "the same thing": one email is one person, and
+                    // `jane+2@example.com` would be a second account nobody can sign into.
+                    $written = $driver->write($record, $existing);
+
+                    $run->addTally(['updated' => 1]);
+                    $this->remember($idMap, $resource, $record, $written);
 
                     return;
                 }

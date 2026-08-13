@@ -58,35 +58,40 @@ class DriverRegistry
         'themes'          => ThemeDriver::class,
         'plugins'         => PluginDriver::class,
 
-        // Records about people. Not separated by position — by RECORD_GROUPS below.
+        // Records about people. Not separated by position — by RECORD_GROUPS below — but their
+        // order among themselves is still a dependency graph: an order names its customer by
+        // email, an invoice names its order by number, a comment names its author by email and
+        // its parent through the id map. Users first, then what they bought, then the paperwork
+        // for it, then what they said.
         'users'           => UserDriver::class,
+        'orders'          => OrderDriver::class,
+        'invoices'        => InvoiceDriver::class,
+        'comments'        => CommentDriver::class,
+        'leads'           => LeadDriver::class,
     ];
 
     /**
      * Resources that are records **about people** rather than content the operator authored.
      *
      * Kept apart from everything else because they fail the admission test the rest pass, and
-     * because the difference has to survive the screen: the content list defaults to *all of it*,
-     * and this list defaults to **none**. Folding the two together would mean an operator who
-     * pressed Export without reading carefully had just produced a personal-data export.
+     * because the difference has to survive the screen: a bundle carrying any of these is a
+     * personal-data export the moment it leaves the building, and the wording on both wizards
+     * says so.
      *
-     * Orders, invoices, comments and leads belong here too and are **not implemented**, each for a
-     * specific reason rather than for want of time:
+     * All five now travel. The blockers that kept the last four out are resolved, each by a
+     * decision rather than by force:
      *
-     * - **Invoices** carry the source's numbering sequence, and the destination computes its next
-     *   number from its own rows. The collision is silent until an accountant finds two invoices
-     *   sharing a number, and deciding between renumbering (which breaks the customer's copy) and
-     *   preserving (which breaks the sequence) is a product decision, not an implementation one.
-     * - **Orders** are meaningless without their items, addresses and the invoice attached to
-     *   them, so they cannot land before that question is answered.
-     * - **Comments and leads** point at what they are about — a post, a product, a form — through
-     *   ids that must be remapped *at write time*, and a driver has no access to the run's id map.
-     *   Shipping them would need that seam widened, which is worth doing deliberately rather than
-     *   as a side effect.
+     * - **Invoices and orders** collide on a *sequence*, not a label — so a clash takes the
+     *   destination's next number in that sequence (`INV-000042`), never a `-2` suffix that
+     *   would sit outside the numbering forever. The customer's copy still shows the old
+     *   number, which the screen states rather than hides.
+     * - **Comments and leads** point at what they are about through ids remapped at write time,
+     *   which became possible when the run's id map was passed into the drivers
+     *   ({@see ResourceDriver::useIdMap()}).
      *
      * @var array<int,string>
      */
-    public const RECORD_GROUPS = ['users'];
+    public const RECORD_GROUPS = ['users', 'orders', 'invoices', 'comments', 'leads'];
 
     /** Resources that are ordinary content, ticked by default. */
     public function contentKeys(): array

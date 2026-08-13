@@ -79,7 +79,7 @@
   {
     "ui": { "type": "section", "icon": "tabler-alert-triangle", "cols": 12, "class": "pa-5" },
     "name": "When a record clashes",
-    "subtitle": "Sometimes a record in the bundle has the same identity as one already here — the same SKU, the same slug, the same discount code.\n\nBy default nothing is lost on either side: the incoming record is added alongside under a free name, and you can merge the two afterwards knowing you still have both. Nothing is ever silently dropped.",
+    "subtitle": "Sometimes a record in the bundle has the same identity as one already here — the same SKU, the same slug, the same discount code.\n\nBy default nothing is lost on either side: the incoming record is added alongside under a free name, and you can merge the two afterwards knowing you still have both. Nothing is ever silently dropped.\n\nAn invoice or order whose number is already taken here is renumbered with this site's next number in sequence, never a suffix. The customer's own copy still shows the old number — that number is kept on the imported record so the two can be matched.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },

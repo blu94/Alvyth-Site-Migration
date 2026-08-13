@@ -69,6 +69,10 @@ version is carried by every existing habit rather than quietly omitted from it.
 | Themes — the row **and** the files, so the menus come too | `slug` |
 | Plugins — the row and the package directory | `slug` |
 | Customer and staff accounts | `email` |
+| Orders, carrying their items and addresses | `order_number` |
+| Invoices, carrying their lines | `invoice_number` |
+| Comments, threaded | the same words at the same moment about the same thing |
+| Form leads — the submissions themselves | the same form, moment and answers |
 
 **Nothing is matched by database id**, ever. An id means nothing outside the database that issued
 it, so honouring one would overwrite a stranger.
@@ -83,7 +87,18 @@ Two consequences worth knowing:
   are narrowed by size and format first, so nothing hashes a whole library to find one match.
 - **An account merges, it never duplicates.** Every other resource resolves a clash by keeping both
   under two names. An email address will not take that — it *is* the person, and `jane+2@…` would
-  be a second account nobody can sign into.
+  be a second account nobody can sign into. Comments and leads merge for the same reason: the same
+  words at the same moment about the same thing are one record, and there is no rename that means
+  anything for a sentence.
+- **A colliding invoice or order takes this site's next number in sequence**, never a suffix.
+  `INV-0007-2` is not an invoice number — it sits outside the sequence forever and reads as an
+  error in an audit — so a clash is renumbered exactly the way this site numbers a new invoice.
+  The customer's copy still shows the old number, which is kept on the imported record so the two
+  can be matched. The screen says so.
+- **An order's lines follow their products through a rename.** Each line resolves through the
+  run's id map first — so a product this same run placed alongside a clash as `HAT-1-2` is linked
+  as itself, not as whichever local record still holds `HAT-1` — and by SKU for products that were
+  already here.
 
 Two things arrive deliberately inert:
 
@@ -97,13 +112,13 @@ Two things arrive deliberately inert:
 
 ### What is deliberately not here
 
-**Orders, invoices, comments and leads.** Not yet built. The invoice-numbering problem that blocked
-them is solved — nothing is dropped, so an imported invoice takes this site's next free number —
-but orders need their items and addresses, and comments and leads need the run's id map available
-at write time, which is a seam widening rather than a driver.
-
 **The activity log, sessions, tokens, revisions, jobs.** Install-local by meaning. A record of what
 happened on another site is not a fact about this one.
+
+**A comment or lead whose subject is absent is skipped and says so.** A comment about a post that
+is not on the destination, or a lead for a form that never travelled, has nowhere honest to live —
+filing it under the wrong thing would be worse than reporting it. The preview counts these as
+*cannot be placed*.
 
 ---
 
@@ -258,6 +273,7 @@ The tests use `DatabaseTransactions`, never `RefreshDatabase`.
 | `RewritePassTest` | Gate 7 — a source host is rewritten out of a builder node, the pass is idempotent, and URLs are left alone when media did not travel |
 | `BundleFormatTest` | A newer bundle is refused, a corrupt one is caught, a damaged line does not lose the rest |
 | `PackageManifestTest` | `api` plural, `routeBase` singular, every `rules` an array, no tables |
+| `RecordGroupsTest` | A colliding invoice takes the next number in sequence and keeps the number it arrived under · an order travels with its items and addresses and re-links its products · an order line follows its product through a rename via the id map · a comment thread keeps its threading and its target · an unplaceable comment or lead is skipped with the reason · rich records of all four kinds describe themselves identically eager-loaded and bare |
 
 `DriverSymmetryTest` earns its place: `PageDriver` once returned an empty builder tree for a
 lazily-loaded page, so **every page compared as changed and was rewritten on every migration**,

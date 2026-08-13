@@ -5,6 +5,7 @@ namespace Plugin\SiteMigration\Backend\Resources;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Plugin\SiteMigration\Backend\Bundle\BundleContext;
+use Plugin\SiteMigration\Backend\Runs\IdMap;
 
 /**
  * What one resource means as a bundle: how it is walked, what a record looks like as a line of
@@ -141,6 +142,22 @@ interface ResourceDriver
      * data files rather than inside them. Every other driver ignores it.
      */
     public function useBundle(BundleContext $context): void;
+
+    /**
+     * Hand the driver the run's id map, before any record is written.
+     *
+     * The map is where each source record's id landed on this install, and it is what lets a
+     * record reference another one **rename-proof**: a natural-key lookup finds the record that
+     * *holds* the key now, which after a KEEP_BOTH collision is the destination's own version,
+     * not the one this run just placed alongside it. An order whose product was renamed
+     * `HAT-1` → `HAT-1-2`, an invoice whose order took this site's next number, a reply whose
+     * parent comment has no natural key at all — each resolves through the map first and falls
+     * back to the natural key only for records this run did not place.
+     *
+     * Mirrors {@see useBundle()}: set by the importer before use, ignored by every driver whose
+     * records reference nothing.
+     */
+    public function useIdMap(IdMap $map): void;
 
     /**
      * Fields whose contents may embed references to other records.
