@@ -202,10 +202,12 @@ bundles gone.
 
 ---
 
-## Known gaps
+## Picking this up
 
-[`OUTSTANDING.md`](OUTSTANDING.md) is the single list — what is missing, what was deferred and why,
-and the two questions that need a product decision rather than more code.
+[`HANDOVER.md`](HANDOVER.md) — start here. What is built, why it is built that way, the platform
+facts that contradict the documentation, and what to do next.
+
+[`OUTSTANDING.md`](OUTSTANDING.md) — every known gap and decision, with its resolution.
 
 ---
 
