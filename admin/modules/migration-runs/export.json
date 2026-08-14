@@ -2,7 +2,7 @@
   {
     "ui": { "type": "section", "icon": "tabler-package-export", "cols": 12, "class": "pa-5" },
     "name": "Export this site",
-    "subtitle": "Everything travels by default — content, media, settings, themes, plugins, accounts, orders, invoices, comments and form leads. Leave the box below empty and you get the whole site.\n\nAccounts, orders, invoices, comments and leads are records about people, so a bundle carrying them is a personal-data export the moment it leaves this server. Leave them out unless you are moving the shop itself.\n\nPress Export, then Download when it finishes. A large site takes more than one press.",
+    "subtitle": "Everything travels by default — content, media, settings, themes, plugins, accounts, orders, invoices, comments and form leads. Leave the box below empty and you get the whole site.\n\nAccounts, orders, invoices, comments and leads are records about people, so a bundle carrying them is a personal-data export the moment it leaves this server. Leave them out unless you are moving the shop itself.\n\nSettle everything on this page first — the Export button is at the foot, below the credentials switch. A large site takes more than one press.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },
@@ -26,16 +26,6 @@
             "label": "Include the image files",
             "default": true,
             "hint": "On, the bundle carries the actual files and the new site owns its pictures. Off, it carries only the records, the bundle is far smaller, and the new site loads images from this one until you upload them there."
-          }
-        ]
-      },
-      {
-        "ui": { "type": "row", "dense": true },
-        "elements": [
-          {
-            "ui": { "type": "button", "color": "primary", "icon": "tabler-package-export", "size": "large" },
-            "action": "save",
-            "label": "Export / Continue"
           }
         ]
       }
@@ -87,9 +77,19 @@
   },
   {
     "ui": { "type": "section", "icon": "tabler-progress", "cols": 12, "class": "pa-5" },
-    "name": "Progress",
-    "subtitle": "Each press works for about twenty seconds, writes down where it got to, and stops — so a run never dies half-way through with nothing to show for it. Press Export again to carry on.",
+    "name": "Export",
+    "subtitle": "Everything above is decided before you press this. Each press works for about twenty seconds, writes down where it got to, and stops — so a run never dies half-way through with nothing to show for it. Press Export again to carry on.",
     "elements": [
+      {
+        "ui": { "type": "row", "dense": true },
+        "elements": [
+          {
+            "ui": { "type": "button", "color": "primary", "icon": "tabler-package-export", "size": "large" },
+            "action": "save",
+            "label": "Export / Continue"
+          }
+        ]
+      },
       {
         "ui": { "type": "row", "dense": false },
         "elements": [

@@ -107,14 +107,14 @@
         "ui": { "type": "row", "dense": true },
         "elements": [
           {
-            "ui": { "type": "button", "color": "info", "variant": "tonal", "icon": "tabler-eye", "size": "large", "cols": 6 },
+            "ui": { "type": "button", "color": "info", "variant": "tonal", "icon": "tabler-eye", "cols": 6 },
             "action": "save",
             "endpoint": "/admin/modules/migration-runs/page/import-preview",
             "method": "POST",
             "label": "Preview changes"
           },
           {
-            "ui": { "type": "button", "color": "primary", "icon": "tabler-database-import", "size": "large", "cols": 6 },
+            "ui": { "type": "button", "color": "primary", "icon": "tabler-database-import", "cols": 6 },
             "action": "save",
             "endpoint": "/admin/modules/migration-runs/page/import-apply",
             "method": "POST",
