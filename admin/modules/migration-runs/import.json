@@ -1,8 +1,8 @@
 [
   {
     "ui": { "type": "section", "icon": "tabler-package-import", "cols": 12, "class": "pa-5" },
-    "name": "The bundle",
-    "subtitle": "Drop the zip the other site produced, then press Read bundle. Nothing is written until you press Import, and Preview will tell you exactly what would change before you do.",
+    "name": "Import a bundle",
+    "subtitle": "Drop the zip the other site produced and press Read bundle. Nothing is written until you press Import, and Preview will tell you exactly what would change before you do.\n\nNothing in the bundle is ever discarded, and nothing already here is replaced unless you turn overwriting on. Every resource is checked against your own permission for it — being allowed to run a migration is not, on its own, permission to rewrite the catalogue. Imported accounts arrive unable to sign in and with no role, and an imported plugin needs re-licensing on this domain.\n\nA large bundle takes more than one press. If it stops part-way the site is partly populated — press Import again to carry on rather than starting over. Re-running is always safe: records are matched on their natural key, so nothing is written twice.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },
@@ -42,14 +42,7 @@
             "label": "Read bundle"
           }
         ]
-      }
-    ]
-  },
-  {
-    "ui": { "type": "section", "icon": "tabler-filter", "cols": 12, "class": "pa-5" },
-    "name": "What to bring in",
-    "subtitle": "Everything in the bundle comes in unless you name it here. Anything you leave out has its data file never opened, so narrowing an import is cheaper, not just smaller.",
-    "elements": [
+      },
       {
         "ui": { "type": "row", "dense": false },
         "elements": [
@@ -62,6 +55,7 @@
             "multiple": true,
             "chips": true,
             "options": { "url": "/admin/modules/migration-runs/options", "master": "all" },
+            "hint": "Everything in the bundle comes in unless you name it here. Anything you leave out has its data file never opened, so narrowing an import is cheaper, not just smaller.",
             "rules": ["nullable", "array"]
           },
           {
@@ -71,23 +65,11 @@
             "label": "Passphrase, if the bundle carries credentials",
             "placeholder": "Leave empty unless it does",
             "hint": "Read bundle will tell you whether this one has any. Credentials are applied last, so a wrong passphrase costs nothing that already imported — they are skipped, you are told, and this site's existing keys are left exactly as they were."
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "ui": { "type": "section", "icon": "tabler-alert-triangle", "cols": 12, "class": "pa-5" },
-    "name": "When a record clashes",
-    "subtitle": "Sometimes a record in the bundle has the same identity as one already here — the same SKU, the same slug, the same discount code.\n\nBy default nothing is lost on either side: the incoming record is added alongside under a free name, and you can merge the two afterwards knowing you still have both. Nothing is ever silently dropped.\n\nAn invoice or order whose number is already taken here is renumbered with this site's next number in sequence, never a suffix. The customer's own copy still shows the old number — that number is kept on the imported record so the two can be matched.",
-    "elements": [
-      {
-        "ui": { "type": "row", "dense": false },
-        "elements": [
+          },
           {
             "ui": {
               "type": "field",
-              "cols": 12,
+              "cols": { "cols": 12, "md": 6 },
               "confirm": {
                 "type": "danger",
                 "title": "Overwrite this site's own records?",
@@ -99,7 +81,7 @@
             "type": "switch",
             "label": "Overwrite my records when they clash",
             "default": false,
-            "hint": "Overwriting also requires permission to update each resource, not just permission to run a migration."
+            "hint": "Off, a record whose identity is already taken here — the same SKU, slug or discount code — is added alongside under a free name, and an invoice or order is renumbered with this site's next number in sequence rather than a suffix (the customer's copy still shows the old number, which is kept on the imported record). On, this site's version is replaced, which also requires permission to update each resource."
           }
         ]
       },
@@ -121,14 +103,7 @@
             "label": "Import / Continue"
           }
         ]
-      }
-    ]
-  },
-  {
-    "ui": { "type": "section", "icon": "tabler-progress", "cols": 12, "class": "pa-5" },
-    "name": "Progress",
-    "subtitle": "A large bundle takes more than one press. If it stops part-way the site is partly populated — press Import again to carry on, do not start over. Re-running is always safe: records are matched on their natural key, so nothing is written twice.",
-    "elements": [
+      },
       {
         "ui": { "type": "row", "dense": false },
         "elements": [
@@ -159,11 +134,5 @@
         ]
       }
     ]
-  },
-  {
-    "ui": { "type": "section", "icon": "tabler-shield-check", "cols": 12, "class": "pa-5" },
-    "name": "What this will not do",
-    "subtitle": "No record in the bundle is ever discarded. If it clashes with one here it is either added alongside under a free name, or — when you turn overwriting on — it replaces the one here. There is no third option where something quietly disappears.\n\nEvery resource in the bundle is checked against your own permission for it. Being allowed to run a migration is not, on its own, permission to rewrite the catalogue.\n\nImported accounts arrive unable to sign in and with no role. A paid plugin's licence is bound to a domain, so plugins arrive needing re-licensing on this one.",
-    "elements": []
   }
 ]

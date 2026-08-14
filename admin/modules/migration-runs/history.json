@@ -2,7 +2,7 @@
   {
     "ui": { "type": "section", "icon": "tabler-history", "cols": 12, "class": "pa-5" },
     "name": "Recent runs",
-    "subtitle": "Every export and import this site has performed, newest first. Deleting a bundle from the server does not undo the run — the records it wrote stay exactly where they are.",
+    "subtitle": "Every export and import this site has performed, newest first.\n\nRemoving a run deletes its record and its bundle file from this server. It does not undo anything — every record an import wrote stays exactly where it is. Nothing is removed automatically either: a bundle is sometimes the only copy of a site while a migration is in progress, and a tool that quietly deleted one after a month would eventually delete the wrong one.",
     "elements": [
       {
         "ui": { "type": "row", "dense": false },
@@ -27,24 +27,12 @@
             "key": "storage_at",
             "type": "display",
             "label": "Runs are kept under"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "ui": { "type": "section", "icon": "tabler-trash", "cols": 12, "class": "pa-5" },
-    "name": "Remove a run",
-    "subtitle": "Deleting a run removes its record and its bundle file from this server. It does not undo anything — every record an import wrote stays exactly where it is.\n\nNothing is removed automatically. A bundle is sometimes the only copy of a site while a migration is in progress, and a tool that quietly deleted one after a month would eventually delete the wrong one.",
-    "elements": [
-      {
-        "ui": { "type": "row", "dense": false },
-        "elements": [
+          },
           {
             "ui": { "type": "field", "cols": { "cols": 12, "md": 8 } },
             "key": "delete_id",
             "type": "select",
-            "label": "Which run",
+            "label": "Which run to remove",
             "placeholder": "Choose a run",
             "options": { "url": "/admin/modules/migration-runs/options", "master": "runs" },
             "hint": "Listed newest first, with the size of each bundle."
