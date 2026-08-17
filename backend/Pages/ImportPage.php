@@ -25,12 +25,15 @@ use Throwable;
  * `'file' => 'required|file'` with **no mime restriction**, so a zip is accepted today. The field
  * yields an `asset_id`, which is what this page takes.
  *
- * **The upload lands on the public disk, and this page's first act is to get it off there.**
- * `protectedDisk: true` is not an option on this build — there is no `protected` disk configured,
- * so the upload would 500 — which leaves the public disk as the only way in. A bundle sitting in
- * the webroot is readable by anyone who knows its URL, so {@see claim()} moves the bytes under
- * `storage/app` and deletes both the public file and its asset row. The exposure window is the
- * seconds between the drop and the button; it is not zero and the screen says so.
+ * **The upload never touches the webroot.** The field declares `protectedDisk: true`, so
+ * `AssetRepository` writes it to the `protected` disk — off the web from the first byte — and
+ * {@see claim()} then moves the bytes into the run's own directory and drops the upload's copy.
+ *
+ * That flag used to be unusable: `AssetRepository::create()` selected a `protected` disk that core
+ * did not configure, so the upload 500'd before writing anything, and the public disk was the only
+ * way in. The bundle then sat in the webroot for the seconds between the drop and the button, and
+ * the screen had to say so. Core 1.4.0 configured the disk and registered the signed `assets.view`
+ * route that `Asset::path()` had always assumed, which is why this package now requires it.
  */
 class ImportPage
 {
@@ -45,7 +48,7 @@ class ImportPage
      * How long an unclaimed upload is left alone before it is swept.
      *
      * Long enough that a slow operator reading the screen is never robbed of the file they just
-     * dropped; short enough that one abandoned upload is not still downloadable next week.
+     * dropped; short enough that one abandoned upload is not still sitting on the disk next week.
      */
     private const ORPHAN_MINUTES = 30;
 
@@ -264,18 +267,23 @@ class ImportPage
     }
 
     /**
-     * Move the uploaded bundle out of the webroot and into the run's own directory.
+     * Move the uploaded bundle into the run's own directory, and take the upload's copy away.
      *
-     * The public copy and the asset row are both removed. Leaving either would keep the bundle
-     * downloadable by URL long after the import finished, which for a file that can carry the
-     * whole site is the kind of thing nobody discovers until it matters.
+     * **The upload no longer lands in the webroot.** Since core 1.4.0 the field declares
+     * `protectedDisk`, so `AssetRepository` writes it to the `protected` disk — off the web from
+     * the first byte. This step is therefore no longer a race to get it out of public; it is
+     * ordinary tidying: the run owns its bundle, so the upload's copy and its asset row go.
+     *
+     * The webroot branch below is kept for one reason only — a bundle uploaded before the flag
+     * existed, on a run resumed across the upgrade, still has a public copy to remove. It is a
+     * no-op for anything uploaded since.
      */
     private function claim(Run $run, Asset $asset): void
     {
         $assetId = (int) $asset->getKey();
 
-        // `getRawOriginal`, because the `path` accessor returns a *URL* — and on a non-public
-        // disk it throws outright, since `assets.view` is not a route on this build.
+        // `getRawOriginal`, because the `path` accessor returns a *URL* — for a protected asset
+        // that is a signed link to `assets.view`, which is not what this needs to read bytes.
         $relative = (string) $asset->getRawOriginal('path');
         $disk     = $asset->disk ?: 'public';
 
@@ -381,11 +389,15 @@ class ImportPage
     /**
      * Delete bundles that were uploaded and never claimed.
      *
-     * **This closes the one hole the design admits.** An upload reaches the public disk in a
-     * request this package does not control, and {@see claim()} only moves it once the operator
-     * presses Read bundle. If they never do — they change their mind, the manifest is refused,
-     * the tab is closed — the bundle stays in the webroot, downloadable by anyone with the URL,
-     * indefinitely. That is a site's whole content sitting on a guessable path.
+     * **What this is for changed, and it is worth keeping straight.** It used to close the one
+     * hole the design admitted: an upload reached the *public* disk in a request this package does
+     * not control, and if the operator never pressed Read bundle — changed their mind, the
+     * manifest was refused, the tab was closed — a site's whole content stayed in the webroot on a
+     * guessable path, indefinitely.
+     *
+     * Since the upload goes straight to the `protected` disk that is no longer an exposure, and
+     * this is disk hygiene: an abandoned bundle is hundreds of megabytes nobody will ever come
+     * back for. Same sweep, smaller stakes — which is a reason to keep it, not to drop it.
      *
      * Swept on every load of this screen rather than on a schedule, because a plugin ships no
      * console command and no scheduled work: `PluginServiceProvider` registers an autoloader and

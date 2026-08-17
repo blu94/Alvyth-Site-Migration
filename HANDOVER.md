@@ -53,10 +53,11 @@ the second install, import it. Staging → production; agency template → clien
 on new hosting.
 
 - **Repo:** `git@github.com:blu94/Ovynt-Site-Migration.git`
-- **Branch:** `master` — ⚠️ **the remote is empty; nothing has ever been pushed.** Every commit is
-  local only. See §7.
+- **Branch:** `master` — pushed. `git ls-remote --heads origin` is the check; §5.1 has the rest.
+  (This line previously said the remote was empty. It was true when written and stale by the time
+  anyone read it, which is why §5.1 now names a command instead of asserting a state.)
 - **Slug:** `site-migration` → `Plugin\SiteMigration\`
-- **Requires:** Ovynt `>=1.3.0 <2.0.0` (floor measured, not guessed — see §4.4)
+- **Requires:** Ovynt `>=1.4.0 <2.0.0` (floor measured, not guessed — see §4.4)
 - **Module type:** `migration-runs`, three custom pages: `export`, `import`, `history`
 
 ---
@@ -89,9 +90,10 @@ paging, writes NDJSON into a staging tree, seals a zip with a manifest and per-f
 prunes the staging tree. Time-boxed at ~20 s per press with a Continue button.
 
 **Download** — bundle is generated under `storage/app`, off the web. Pressing Download copies it to
-the public folder under a 64-hex random name; the browser fetches it; the copy is purged by the next
-screen load, the operator's press, or an hourly sweep. Verified: `HTTP 200, 1,533,667 bytes,
-application/zip`.
+the **`protected` disk** and returns a **signed link that expires in minutes**; the copy is purged
+by the next screen load, the operator's press, or an hourly sweep. The link is re-minted on every
+page load, because it expires long before a screen left open does. Nothing reaches the webroot in
+either direction — see §4.1 for what changed in core to allow that.
 
 **Import** — upload → Read bundle (manifest only, no extraction) → Preview (writes nothing) →
 Import. Resumable. Credentials applied last.
@@ -221,14 +223,31 @@ routinely absent on shared hosting. The one sodium call, wiping a key, is guarde
 **Each of these was checked by running something.** Re-check before trusting them; do not take them
 from this file alone.
 
-### 4.1 There is no `protected` disk and no `assets.view` route
+### 4.1 There was no `protected` disk and no `assets.view` route — **fixed in core 2026-08-17**
 
-`config('filesystems.disks')` is `local, public, s3, builder, themes, backups`. `route:list` has no
-`assets.view`. So `Asset::path()` on a non-public asset throws `RouteNotFoundException`, and
-`protectedDisk: true` on an upload field would 500.
+**What was true when this package was built.** `config('filesystems.disks')` was
+`local, public, s3, builder, themes, backups` and `route:list` had no `assets.view`, so
+`Asset::path()` on a non-public asset threw `RouteNotFoundException` and `protectedDisk: true` on
+an upload field 500'd with `Disk [protected] does not have a configured driver`. Two halves of one
+unfinished feature, each hiding the other.
 
-**Consequence:** the spec's §5.2 bundle transport is unbuildable. The public folder is the only
-directory nginx serves, which is why the download transits it.
+**Consequence at the time:** the spec's §5.2 bundle transport was unbuildable, and the public
+folder — the only directory nginx serves — is why the download transits it.
+
+**What is true now.** Core defect 11 is fixed (`CORE-PLUGIN-DEFECTS.md`): there is a `protected`
+disk rooted at `storage/app/protected`, a signed `assets.view` route at `/private-assets/{id}`
+served by `PrivateAssetController`, and a configurable expiry
+(`ovynt.assets.private_link_minutes`, 10 by default) in place of the five-second literal.
+
+**The workaround is gone.** `Download::publish()` copies the bundle to the `protected` disk and
+returns `$asset->path` — a signed link, re-minted on every screen load because it expires in
+minutes while a page can sit open for hours. The import field declares `protectedDisk: true`, so
+the upload never reaches the webroot at all. Deleted with them: the 64-hex naming, the
+`mirrorToWebroot()` dance non-symlinked hosts needed, and the public half of every cleanup path.
+
+**The floor moved to `>=1.4.0` for exactly this**, and `PackageManifestTest` now asserts both ends
+of the path exist — the `protected` disk and the `assets.view` route — because a class check cannot
+see a missing disk or an unregistered route, which is how the gap survived this long.
 
 ### 4.2 `PermissionsField` ignores `element.options`
 
@@ -272,17 +291,34 @@ wrong it silently never sets the flag.
 
 ## 5. What to do next, in order
 
-### 5.1 Push the repo — blocked, needs the user
+### 5.1 Push the repo — **DONE**, and here is how to check rather than assume
 
-Every commit is local. The remote is empty.
+The repository is pushed. Verified 17 August 2026:
 
 ```bash
-cd plugins/site-migration
-git push -u origin master     # or rename to main first, if that is the convention
+git -C plugins/site-migration ls-remote --heads origin
+# 0f94a9a8df21b66552b8f1e66aa724ef3ec3bc9d  refs/heads/master
+
+git -C plugins/site-migration rev-list --count origin/master..master
+# 0
 ```
 
-The push was refused by a permission classifier in two sessions now. Ask the user to run it or
-to approve the action.
+`master` and `origin/master` are the same commit and nothing is ahead. This entry previously led
+the section with *"the remote is empty; nothing has ever been pushed"*, which was true when it was
+written and stayed at the top of the to-do list after it stopped being true — so the first action
+item a new session picked up was one that had already happened.
+
+**The transferable part is the shape of the mistake, not the push.** A handover asserts state, and
+state goes stale silently. Every item in this section now names the command that proves its
+standing; run the command before acting on the sentence. That is the same rule §4 states for the
+platform facts, applied to this package's own repository.
+
+After any future commit, the standing check is one line:
+
+```bash
+git -C plugins/site-migration status --porcelain && git -C plugins/site-migration rev-list --count origin/master..master
+# empty, then 0 = working tree clean and everything pushed
+```
 
 ### 5.2 Every resource the specification promised — **DONE**
 
@@ -390,10 +426,11 @@ plugin repo; the root has unrelated pre-existing changes that are not yours to c
 
 ## 7. Known limitations to state, not hide
 
-- **The download transits the public folder.** Unavoidable: no routes, `savePageData` always returns
-  JSON, and the public folder is the only thing nginx serves. Purged after.
-- **The upload is briefly public** for the same reason, until Read bundle is pressed. Unclaimed
-  uploads are swept after 30 minutes.
+- ~~The download transits the public folder~~ and ~~the upload is briefly public~~ — **both fixed
+  in core 1.4.0 and removed here.** The bundle now goes out as a signed link to the `protected`
+  disk and comes in on that same disk; neither direction touches the webroot. Unclaimed uploads
+  are still swept after 30 minutes, now for disk hygiene rather than exposure. **This is what the
+  `>=1.4.0` floor buys**, and it is the only reason the floor moved.
 - **A paid plugin's licence is domain-bound**, so an imported plugin needs re-licensing.
 - **Uninstalling does not remove `storage/app/site-migration/`.** The plugin system offers no
   uninstall hook for files, and deleting an operator's only bundle would be worse.

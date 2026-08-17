@@ -213,19 +213,37 @@ Two behaviours are deliberate and stated on screen:
   re-licensing here — the files arrive, the key does not, and carrying the key would produce
   something that looks licensed and is not.
 
-## 10. Downloading the bundle — **RESOLVED: a real download**
+## 10. Downloading the bundle — **RESOLVED twice: through the webroot, then properly**
 
-The bundle is generated under `storage/app`, off the web. Pressing **Download** copies it to the
-public disk under a 64-character random name, the browser fetches it, and the copy is removed — by
-the operator's own press, by the sweep on the next screen load, and in any case within the hour.
+**First answer, and it was the honest one available.** The bundle is generated under
+`storage/app`, off the web; pressing **Download** copied it to the *public* disk under a
+64-character random name, the browser fetched it, and the copy was removed — by the operator's own
+press, by the sweep on the next screen load, and in any case within the hour. It transited; it was
+not stored. Verified end to end at `HTTP 200, 1,533,667 bytes, application/zip`.
 
-It **transits**; it is not stored. That transit is unavoidable: the only directory nginx serves is
-the public one, a plugin registers no routes, and `savePageData` always wraps its return in
-`response()->json()`, so no package endpoint can return bytes. The engine's `download` action does
-fetch a URL as an authenticated blob, but it lives in `useModuleWrapper`, which custom pages do not
-use, and it would still need an endpoint that returns a blob.
+The reasoning for accepting that was sound and is worth keeping: a plugin registers no routes, so
+it cannot stream a file; `savePageData` always wraps its return in `response()->json()`, so no
+package endpoint can return bytes; and the engine's `download` action lives in `useModuleWrapper`,
+which custom pages do not use. The public folder was the only directory nginx served.
 
-Verified end to end: `HTTP 200, 1,533,667 bytes, application/zip`.
+**What the reasoning missed is that core's own private-asset path was supposed to cover this** —
+and was simply unfinished. `AssetRepository::create()` selected a `protected` disk core did not
+configure, and `Asset::path()` signed an `assets.view` route that was not registered, so the
+documented mechanism 500'd at one end and threw at the other. Filed as core defect 11 and **fixed
+in core 1.4.0**: the disk exists, the route exists, and the expiry is configurable
+(`ovynt.assets.private_link_minutes`) instead of the five-second literal that would never have
+worked for a link a human clicks.
+
+**Second answer, now shipped.** `Download::publish()` copies to the `protected` disk and returns
+`$asset->path` — a signed link, re-minted on every screen load because it expires in minutes while
+a page can sit open for hours. The import field declares `protectedDisk: true`, so the upload never
+reaches the webroot either. Gone with the transit: the 64-hex name (the signature is the credential
+now), `mirrorToWebroot()` for hosts where `public/storage` is a real directory rather than a
+symlink, and the public half of every cleanup path.
+
+**The floor moved to `>=1.4.0` for this and only this.** `PackageManifestTest` asserts both ends of
+the path exist, because a class check cannot see a missing disk or an unregistered route — which is
+exactly how the gap survived as long as it did.
 
 ## 11. Three defects found while fixing the above — **FIXED**
 

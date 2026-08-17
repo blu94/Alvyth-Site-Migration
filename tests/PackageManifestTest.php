@@ -35,16 +35,25 @@ class PackageManifestTest extends TestCase
     }
 
     /**
-     * The floor is 1.3.0, because that is the oldest core this package can actually run on.
+     * The floor is 1.4.0, because that is the oldest core this package can actually run on.
      *
-     * **Checked against the core repository, not assumed.** At the commit that bumped the version
-     * to 1.2.0, three seams this package calls did not exist yet: `App\Services\Seo\SitemapCache`,
-     * `App\Models\Revision` and the `EmailBranding` repository. On a genuine 1.2.0 install every
-     * import would fatal at `SitemapCache` on its **last** step — after writing every record — and
-     * every page overwrite would fatal at `Revision`.
+     * **Raised twice, and each time by measurement rather than by preference.**
      *
-     * The specification says `>=1.2.0` and the specification is wrong. Loosening this again brings
-     * back a failure whose only symptom is a migration that dies after doing all the work.
+     * *To 1.3.0:* at the commit that bumped core to 1.2.0, three seams this package calls did not
+     * exist — `App\Services\Seo\SitemapCache`, `App\Models\Revision` and the `EmailBranding`
+     * repository. On a genuine 1.2.0 install every import would fatal at `SitemapCache` on its
+     * **last** step, after writing every record, and every page overwrite would fatal at
+     * `Revision`. The specification says `>=1.2.0` and the specification is wrong.
+     *
+     * *To 1.4.0:* the bundle no longer transits the webroot in either direction. The upload
+     * declares `protectedDisk` and the download is handed over as a signed link, both of which
+     * need what core 1.4.0 added — the `protected` disk and the `assets.view` route that
+     * `Asset::path()` had always assumed. On 1.3.0 the upload 500s with *"Disk [protected] does
+     * not have a configured driver"* and any signed link throws `RouteNotFoundException`, so the
+     * import screen fails at its first step rather than degrading.
+     *
+     * Loosening this brings back a failure whose only symptom is a migration that dies after doing
+     * all the work — or, now, one that cannot take the file at all.
      */
     #[Test]
     public function the_package_refuses_a_core_missing_the_seams_it_calls(): void
@@ -54,7 +63,12 @@ class PackageManifestTest extends TestCase
         $this->assertFalse($manifest->satisfiedBy('1.2.0'), 'A build with no SitemapCache or Revision must be refused.');
         $this->assertFalse($manifest->satisfiedBy('1.2.9'));
 
-        $this->assertTrue($manifest->satisfiedBy('1.3.0'));
+        // 1.3.0 carries the seams the drivers call and none of the private-asset path, so it is
+        // now refused for a different reason than 1.2.0 was — and refused all the same.
+        $this->assertFalse($manifest->satisfiedBy('1.3.0'), 'A build with no protected disk must be refused.');
+        $this->assertFalse($manifest->satisfiedBy('1.3.9'));
+
+        $this->assertTrue($manifest->satisfiedBy('1.4.0'));
         $this->assertTrue($manifest->satisfiedBy((string) config('ovynt.version')));
 
         // A 2.x core is a different contract, and installing into one unread is how a package
@@ -95,6 +109,40 @@ class PackageManifestTest extends TestCase
             defined(\App\Models\Revision::class . '::KEEP_PER_RECORD'),
             'Revision::KEEP_PER_RECORD is gone, so the page snapshot trim no longer matches the trait.'
         );
+    }
+
+    /**
+     * The private-asset path exists at both ends — the disk to write to and the route to read by.
+     *
+     * **A class check would not have caught this one, which is why it is its own test.** Both
+     * `Asset::path()` and `AssetRepository::create()` were present and looked complete for as long
+     * as this package has existed; what was missing was a *disk* one of them names and a *route*
+     * the other signs. Neither absence is visible to `class_exists`, and neither threw until
+     * something took the private branch — which nothing did, because the two gaps hid each other.
+     *
+     * The bundle now goes both ways through this path, so if a core upgrade removes either end,
+     * failing here is enormously cheaper than failing on an operator's upload.
+     */
+    #[Test]
+    public function the_private_asset_path_exists_at_both_ends(): void
+    {
+        $this->assertArrayHasKey(
+            'protected',
+            (array) config('filesystems.disks'),
+            'There is no `protected` disk, so an upload declaring protectedDisk would 500 before writing anything.'
+        );
+
+        $this->assertTrue(
+            \Illuminate\Support\Facades\Route::has('assets.view'),
+            'The `assets.view` route is gone, so Asset::path() throws for every non-public asset — including this package\'s own download.'
+        );
+
+        // Reading the accessor is the real assertion: it is the line that throws, and it throws
+        // during serialisation rather than at the call site, which is what makes it expensive.
+        $asset = new \App\Models\Asset(['disk' => 'protected', 'path' => 'probe.zip']);
+        $asset->setAttribute('id', 1);
+
+        $this->assertStringContainsString('signature=', (string) $asset->path);
     }
 
     /**

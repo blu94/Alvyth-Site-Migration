@@ -49,10 +49,13 @@ Keep pressing **Export / Continue** until it says *Finished*.
 
 ### Downloading your file
 
-When the run finishes, press **Download the bundle**. The file is copied to a web-reachable spot
-under a long random name, your browser fetches it, and the copy is removed — by your next visit to
-any Site Migration screen, and in any case within the hour. The bundle itself stays in private
-storage on the server; only the short-lived download copy is ever public.
+When the run finishes, press **Download the bundle**. You get a private link that works for a few
+minutes and then stops working — nothing about the bundle is ever readable from the web without it.
+If you come back to the screen later the link is simply issued again, so a stale page is never a
+problem; press Download once more.
+
+The file itself stays in private storage on the server, and the copy made for the download is
+removed by your next visit to any Site Migration screen, and in any case within the hour.
 
 ### Records about people
 
@@ -106,9 +109,10 @@ Open **Site Migration → Import** on the *other* site.
 
 Drop the zip onto the **Bundle file** box and wait for it to finish uploading.
 
-Then press **Read bundle** straight away. Between the upload finishing and that press, the file sits
-in a public folder — pressing the button moves it somewhere private and deletes the public copy. If
-you change your mind and never press it, the file is cleaned up automatically after half an hour.
+Then press **Read bundle**. The upload goes straight to private storage — it is never in a
+web-readable folder at any point — and pressing the button moves it into this run's own directory.
+If you change your mind and never press it, the file is cleaned up automatically after half an
+hour.
 
 **What is in it** then tells you where the bundle came from and what it holds:
 

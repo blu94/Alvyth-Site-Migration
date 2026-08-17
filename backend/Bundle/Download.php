@@ -2,49 +2,54 @@
 
 namespace Plugin\SiteMigration\Backend\Bundle;
 
-use Illuminate\Support\Facades\File;
+use App\Models\Asset;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Plugin\SiteMigration\Backend\Runs\Run;
 use RuntimeException;
 use Throwable;
 
 /**
- * Hands a finished bundle to the operator's own computer, and takes it back off the web afterwards.
+ * Hands a finished bundle to the operator's own computer.
  *
- * **Why this is not simply a link.** A plugin registers no routes, so it cannot stream a file, and
- * `savePageData` always wraps its return in `response()->json()` — there is no path by which a
- * package returns bytes. The schema engine *does* have a `download` action that fetches a URL as an
- * authenticated blob, but it lives in `useModuleWrapper`, which custom pages do not use, and it
- * would need an endpoint that returns a blob in any case.
+ * **This used to go through the webroot, and it no longer does.** A plugin registers no routes, so
+ * it cannot stream a file, and `savePageData` always wraps its return in `response()->json()` —
+ * there is no path by which a package returns bytes. Until core 1.4.0 the only directory nginx
+ * served was `public`, so the bundle was *copied* there under a 64-hex random name, downloaded,
+ * and swept within the hour. It transited the web; it was never meant to live there.
  *
- * That leaves exactly one mechanism: the **public disk**, which is the only directory nginx serves.
- * So the bundle — which is generated and kept under `storage/app`, off the web — is *copied* there
- * under a name nobody can guess, downloaded, and the copy removed.
+ * Core 1.4.0 finished the private-asset path that `Asset::path()` had always assumed — a
+ * `protected` disk, a signed `assets.view` route, and a configurable expiry — so the bundle is now
+ * copied to that disk instead and handed over as a **temporary signed URL**. Three things went
+ * away with the webroot: the unguessable name (the signature is the credential now), the mirror
+ * into `public/storage` that non-symlinked hosts needed, and the window in which anyone who
+ * guessed the URL could have the whole site.
  *
- * **It transits; it is not stored.** Three things bound the window:
- *
- * 1. The name is 32 random bytes. Guessing it is not a realistic attack.
- * 2. The copy is removed the next time any Site Migration screen is opened, and by the operator's
- *    own "Remove the download link" press.
- * 3. Nothing links to the directory and nothing indexes it.
- *
- * A shorter window is not available without a route, and a route is not available to a plugin.
+ * **Why a copy at all.** A signed link addresses an `Asset`, and an Asset's path is relative to a
+ * configured disk — while a run's bundle lives in the run's own directory under
+ * `storage/app/site-migration`, which is not one. Copying into `protected` is the same single copy
+ * the webroot version made, minus the exposure. The copy is removed by the operator's press, by
+ * the sweep on the next screen load, and in any case within the hour.
  */
 class Download
 {
-    /** Where the transit copies live on the public disk. */
+    /** Where transit copies live on the protected disk. */
     private const DIRECTORY = 'site-migration-downloads';
 
+    /** The disk core 1.4.0 added for exactly this: uploads that must not be reachable by URL. */
+    private const DISK = 'protected';
+
     /**
-     * How long a link is allowed to exist before it is swept.
+     * How long a copy is allowed to exist before it is swept.
      *
-     * Long enough to survive a slow download of a large bundle on a poor connection; short enough
-     * that a link nobody used is gone within the hour.
+     * Longer than the signed link it is fetched with, deliberately: the link expires on its own
+     * (`ovynt.assets.private_link_minutes`, ten by default), and this only has to outlive a slow
+     * download of a large bundle on a poor connection.
      */
     private const MINUTES = 60;
 
     /**
-     * Publish a run's bundle and return the URL to fetch it from.
+     * Publish a run's bundle and return a signed URL to fetch it from.
      *
      * @throws RuntimeException when the run has no bundle to publish
      */
@@ -59,9 +64,7 @@ class Download
         $this->sweep();
         $this->withdraw($run);
 
-        $name = bin2hex(random_bytes(32)) . '.zip';
-        $key  = self::DIRECTORY . '/' . $name;
-
+        $key    = self::DIRECTORY . '/' . $run->id . '.zip';
         $source = fopen($bundle, 'rb');
 
         if ($source === false) {
@@ -71,71 +74,95 @@ class Download
         try {
             // `writeStream`, not `put`: a media-included bundle is tens or hundreds of megabytes,
             // and reading it into a PHP string to hand to the disk is that much memory for a copy.
-            Storage::disk('public')->writeStream($key, $source);
+            Storage::disk(self::DISK)->writeStream($key, $source);
         } finally {
             fclose($source);
         }
 
-        // `AssetRepository` does the same dance: when `public/storage` is a real directory rather
-        // than a symlink — the usual state on Windows and on hosts that forbid symlinks — a file
-        // written to the disk is not under the webroot until it is copied there.
-        $this->mirrorToWebroot($key);
+        $asset = Asset::create([
+            'title'   => $run->id . '.zip',
+            'usage'   => 'MIGRATION_DOWNLOAD',
+            'path'    => $key,
+            'format'  => 'zip',
+            'size'    => (int) Storage::disk(self::DISK)->size($key),
+            'disk'    => self::DISK,
+            'user_id' => Auth::id(),
+        ]);
 
-        $run->set('download_name', $name)
+        $run->set('download_asset_id', (int) $asset->getKey())
             ->set('download_at', now()->toDateTimeString())
             ->save();
 
-        return rtrim((string) config('app.url'), '/') . '/storage/' . $key;
+        // The accessor signs the link. Minted here, inside a request already behind the admin
+        // guard — which is where the authorisation for it happens; see PrivateAssetController.
+        return (string) $asset->path;
     }
 
     /**
-     * Take a run's published copy back off the web.
+     * Take a run's published copy back off the disk.
      *
-     * Called by the operator's own press, before publishing a fresh copy, and by the sweep. Safe to
-     * call when there is nothing to remove.
+     * Called by the operator's own press, before publishing a fresh copy, and by the sweep. Safe
+     * to call when there is nothing to remove.
      */
     public function withdraw(Run $run): void
     {
-        $name = (string) $run->get('download_name', '');
+        $assetId = (int) $run->get('download_asset_id', 0);
 
-        if ($name === '') {
-            return;
+        if ($assetId > 0) {
+            $this->forget(Asset::query()->find($assetId));
         }
 
-        $this->forget(self::DIRECTORY . '/' . $name);
-
-        $run->set('download_name', null)->set('download_at', null)->save();
+        $run->set('download_asset_id', null)->set('download_at', null)->save();
     }
 
-    /** The live URL for a run's published copy, or null if it has none. */
+    /**
+     * A fresh signed URL for a run's published copy, or null if it has none.
+     *
+     * **Freshly signed every time, and that matters:** a signed link expires in minutes while a screen can sit
+     * open for hours, so re-minting on each page load is what makes the button work when the
+     * operator comes back to it. The copy on disk is what persists; the URL never is.
+     */
     public function url(Run $run): ?string
     {
-        $name = (string) $run->get('download_name', '');
+        $assetId = (int) $run->get('download_asset_id', 0);
 
-        if ($name === '' || ! Storage::disk('public')->exists(self::DIRECTORY . '/' . $name)) {
+        if ($assetId <= 0) {
             return null;
         }
 
-        return rtrim((string) config('app.url'), '/') . '/storage/' . self::DIRECTORY . '/' . $name;
+        $asset = Asset::query()->find($assetId);
+
+        if ($asset === null || ! Storage::disk(self::DISK)->exists((string) $asset->getRawOriginal('path'))) {
+            return null;
+        }
+
+        return (string) $asset->path;
     }
 
     /**
      * Remove every published copy older than the window.
      *
-     * Swept on screen load rather than on a schedule, because a plugin ships no console command and
-     * no scheduled work — `PluginServiceProvider` registers an autoloader and listeners, nothing
-     * else. The screens where downloads are made are the ones the operator visits.
+     * Swept on screen load rather than on a schedule, because a plugin ships no console command
+     * and no scheduled work — `PluginServiceProvider` registers an autoloader and listeners,
+     * nothing else. The screens where downloads are made are the ones the operator visits.
      */
     public function sweep(): void
     {
         try {
             $cutoff = now()->subMinutes(self::MINUTES)->getTimestamp();
-            $disk   = Storage::disk('public');
+            $disk   = Storage::disk(self::DISK);
 
             foreach ($disk->files(self::DIRECTORY) as $file) {
-                if ($disk->lastModified($file) < $cutoff) {
-                    $this->forget($file);
+                if ($disk->lastModified($file) >= $cutoff) {
+                    continue;
                 }
+
+                // The row first, so a file that cannot be deleted does not leave an Asset
+                // pointing at nothing — which would throw for every screen that lists assets.
+                $this->forget(
+                    Asset::query()->where('disk', self::DISK)->where('path', $file)->first(),
+                    $file
+                );
             }
         } catch (Throwable) {
             // Housekeeping. A sweep that could not run is not a reason to refuse the screen, and
@@ -143,46 +170,19 @@ class Download
         }
     }
 
-    /** Delete one transit copy from both the disk and the webroot mirror. */
-    private function forget(string $key): void
+    /** Delete one transit copy: its bytes and its asset row. */
+    private function forget(?Asset $asset, ?string $key = null): void
     {
         try {
-            Storage::disk('public')->delete($key);
+            $key ??= $asset === null ? null : (string) $asset->getRawOriginal('path');
 
-            $mirrored = public_path('storage/' . ltrim($key, '/'));
-
-            if (is_file($mirrored)) {
-                File::delete($mirrored);
+            if ($key !== null && $key !== '') {
+                Storage::disk(self::DISK)->delete($key);
             }
+
+            $asset?->delete();
         } catch (Throwable) {
             // Best effort: a copy that could not be removed is swept again on the next visit.
-        }
-    }
-
-    private function mirrorToWebroot(string $key): void
-    {
-        $target = public_path('storage/' . ltrim($key, '/'));
-
-        if (is_file($target)) {
-            return;
-        }
-
-        try {
-            $absolute = Storage::disk('public')->path($key);
-
-            if (! is_file($absolute)) {
-                return;
-            }
-
-            File::ensureDirectoryExists(dirname($target));
-
-            // `copy` rather than a stream pair: this is the fallback path for hosts without a
-            // working symlink, and `File::copy` is already what core uses here.
-            File::copy($absolute, $target);
-        } catch (Throwable) {
-            // If the mirror fails the symlink is probably doing its job, and the URL resolves
-            // anyway. A failure here that is real surfaces as a 404 on the link, which the
-            // operator can act on.
         }
     }
 }

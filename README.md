@@ -127,29 +127,37 @@ filing it under the wrong thing would be worse than reporting it. The preview co
 
 ---
 
-## Two things to know before you use it
+## How the bundle gets in and out
 
-### The download transits the public folder
+**Neither direction touches the public folder.** The file is private from the first byte to the
+last, in both directions — which is why this package requires Ovynt **1.4.0** and refuses anything
+older.
+
+### Downloading
 
 The bundle is generated under `storage/app/site-migration/`, off the web. Pressing **Download**
-copies it to the public folder under a 64-character random name, your browser fetches it, and the
-copy is removed — by your own press, by the sweep on the next screen load, and in any case within
-the hour.
+copies it to the `protected` disk — also off the web — and hands your browser a **signed link that
+expires in minutes**. The copy is removed by your own press, by the sweep on the next screen load,
+and in any case within the hour.
 
-That transit is unavoidable rather than lazy. A plugin registers no routes, so it cannot stream a
-file; `savePageData` always wraps its return in `response()->json()`, so no package endpoint can
-return bytes; and the one upload/download path core offers — an `Asset` — is unusable on Ovynt
-1.3.0, where there is no `protected` disk and no `assets.view` route, so `Asset::path()` on a
-non-public asset throws. The public folder is the only directory nginx serves.
+### Uploading
 
-### Uploading is briefly public
+The upload goes straight to the same private disk. Pressing **Read bundle** moves it into the run's
+own directory and deletes the upload's copy; an upload nobody claims is swept after 30 minutes so
+an abandoned bundle does not sit on the disk forever.
 
-An import has to come *in* through that same public path, because it is the only upload core
-offers. The moment you press **Read bundle** the file is moved into private storage and both the
-public copy and its asset row are deleted. Uploads that are never claimed are swept after 30
-minutes.
+### Why the version floor is 1.4.0
 
-So: press Read bundle straight away rather than leaving the page open.
+Both of those need something that did not work before it. A plugin registers no routes, so it
+cannot stream a file, and `savePageData` always wraps its return in `response()->json()`, so no
+package endpoint can return bytes — which leaves core's own `Asset` as the only way in or out.
+On 1.3.0 that path was advertised and unfinished: `AssetRepository` selected a `protected` disk
+core did not configure, and `Asset::path()` signed a route named `assets.view` that was not
+registered, so an upload 500'd and a private link threw. Ovynt 1.4.0 finished both ends.
+
+Earlier versions of this package worked around it by copying the bundle through the public folder
+under a 64-character random name and sweeping it within the hour. That was the honest answer at the
+time; it is not needed now, and it is gone.
 
 ---
 
@@ -233,20 +241,41 @@ facts that contradict the documentation, and what to do next.
 
 ## Releasing
 
-The package is **unsigned**, so every install prints a warning. Signing is a release step, not a
-repository state — `plugin.sig` covers exact bytes and goes stale on the next edit, which is why it
-is `.gitignore`d:
+Run these in order. **The order is the point** — a signature covers exact bytes, so anything that
+edits a file after step 5 invalidates it silently, and the package installs with the same "not
+signed" warning it would have had unsigned.
 
-```bash
-php artisan ovynt:plugin-sign /path/to/site-migration --key=~/keys/vendor-private.pem
-# then zip the directory. Never edit a file afterwards.
-```
+| # | Step | How it is checked |
+|---|---|---|
+| 1 | Working tree clean, everything pushed | `git status --porcelain` empty, `git rev-list --count origin/master..master` = `0` |
+| 2 | Suite green against the installed copy | `docker exec ovynt_app php vendor/bin/phpunit storage/app/plugins/site-migration/tests --no-coverage` |
+| 3 | Both wizards driven in a browser | Export, Import and History at `/admin/module/migration-runs/page/{export\|import\|history}` — a green suite has never once caught this package's UI defects |
+| 4 | Version and floor bumped deliberately | `plugin.json` → `version`, and `requires.ovynt` if a new core seam is now called; `PackageManifestTest` asserts the floor |
+| 5 | **Sign**, then **zip**, then stop editing | `php artisan ovynt:plugin-sign /path/to/site-migration --key=~/keys/vendor-private.pem` |
 
-Keep the private key offline. A signing key in the repository would let anyone mint packages in the
-author's name, which is worse than shipping unsigned.
+`plugin.sig` is `.gitignore`d deliberately: it covers exact bytes and goes stale on the next edit,
+so it is a release artifact rather than a repository state.
 
-The package ships no artwork, so Ovynt draws its Tabler icon. Dropping `banner.png` and
-`thumbnail.png` at the package root is picked up automatically — no manifest change needed.
+**Keep the private key offline** — in a secrets manager or on a hardware token, never in this
+repository. A signing key in version control lets anyone mint packages in the author's name, which
+is worse than shipping unsigned.
+
+### Artwork — decided: the icon ships
+
+**`tabler-transfer` is the package's mark, not a placeholder awaiting one.** It reads correctly at
+every size Ovynt draws it, it costs nothing to maintain, and it cannot go stale. The manifest
+declares no image paths, which is the state that matters: it once named `assets/banner.png` and
+`assets/thumbnail.png` against a directory that never existed, and a manifest asserting a file that
+is not there sends the next reader looking for something nobody ever made.
+
+Fabricating a banner to fill the gap was considered and rejected. Listing artwork ships to every
+install and is covered by the release signature, so inventing a design nobody asked for is a
+heavier commitment than the icon, not a lighter one.
+
+**Reversing it costs nothing and needs no code change.** Drop `banner.png` (≈1200×300) and
+`thumbnail.png` (≈256×256) at the package root; Ovynt probes for them by name and uses them from
+the next install onwards. **Raster only** — an SVG is refused, because it renders inside an
+authenticated admin session and is a stored-XSS surface.
 
 ---
 

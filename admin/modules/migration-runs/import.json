@@ -15,13 +15,14 @@
                 "maxFiles": 1,
                 "maxFilesize": 512,
                 "acceptedFiles": ".zip,application/zip,application/x-zip-compressed",
-                "usage": "MIGRATION_BUNDLE"
+                "usage": "MIGRATION_BUNDLE",
+                "protectedDisk": true
               }
             },
             "key": "bundle",
             "type": "image",
             "label": "Bundle file",
-            "hint": "The upload lands in the public folder for a few seconds before this screen moves it somewhere private. Press Read bundle straight away rather than leaving the page open."
+            "hint": "The upload goes straight to private storage — never the public folder — and this screen moves it into the run's own directory when you press Read bundle."
           },
           {
             "ui": { "type": "field", "cols": 12, "valueClass": "text-body-2" },
