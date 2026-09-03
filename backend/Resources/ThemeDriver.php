@@ -79,7 +79,7 @@ class ThemeDriver extends BaseDriver
     /** @param array<string,mixed> $record */
     public function locate(array $record): ?Model
     {
-        $slug = $this->requireKey($record, 'slug', 'theme');
+        $slug = $this->packageSlug($record, 'theme');
 
         return Theme::query()->where('slug', $slug)->first();
     }
@@ -90,9 +90,9 @@ class ThemeDriver extends BaseDriver
      */
     public function write(array $record, ?Model $existing): Model
     {
-        $slug = $this->requireKey($record, 'slug', 'theme');
+        $slug = $this->packageSlug($record, 'theme');
 
-        $this->restoreFiles($slug);
+        $this->restoreFiles($slug, $existing);
 
         $theme = $existing ?? new Theme();
 
@@ -113,6 +113,18 @@ class ThemeDriver extends BaseDriver
         $theme->save();
 
         return $theme;
+    }
+
+    /**
+     * Merging a theme replaces settings, menus and files the operator owns here.
+     *
+     * The slug is the directory name, so there is no second copy to keep — but what is replaced is
+     * the colours, fonts and navigation somebody built on this site, and (before this) the Blade
+     * files of the theme their shop is running. That needs the overwrite dialog, not a default.
+     */
+    public function mergeReplacesLocalWork(): bool
+    {
+        return true;
     }
 
     /**
@@ -166,19 +178,43 @@ class ThemeDriver extends BaseDriver
      * the tree came out of the bundle through `SafeZip`, which has already refused anything with a
      * traversing path.
      */
-    private function restoreFiles(string $slug): void
+    private function restoreFiles(string $slug, ?Model $existing): void
     {
         if ($this->bundle === null) {
             return;
         }
 
-        $source = $this->bundle->path . '/themes/' . $slug;
+        $source = $this->containedPath($this->bundle->path . '/themes', $slug, 'theme');
 
+        // Nothing to decline. A bundle exported without theme files reaches here for every theme
+        // row it carries, and saying "the files were left alone" about files that do not exist
+        // would be noise in the one place an operator is reading for real problems.
         if (! is_dir($source)) {
             return;
         }
 
-        $target = storage_path('app/themes/' . $slug);
+        // **Never over the theme the shop is currently rendering.** `storage/app/themes` is
+        // symlinked to `public/themes`, and a theme is Blade — so writing here replaces code that
+        // executes, and doing it to the *active* theme changes how somebody's live shop looks and
+        // behaves as a side effect of importing data.
+        //
+        // A note rather than a refusal, because the two halves of a theme carry different risk and
+        // the operator wants one of them: the row carries the settings and sections, which is where
+        // the menus live and the reason themes travel at all. So the configuration lands, the files
+        // do not, and the run says which.
+        if ($existing !== null && $existing->status === 'active') {
+            $this->note(sprintf(
+                'The "%s" theme is the one this shop is currently using, so its settings and menus '
+                . 'were imported but its files were left alone — replacing those would change how a '
+                . 'live shop looks and swap out code it is running. Switch to another theme first '
+                . 'if you meant to replace the files too.',
+                $slug
+            ));
+
+            return;
+        }
+
+        $target = $this->containedPath(storage_path('app/themes'), $slug, 'theme');
 
         File::ensureDirectoryExists(dirname($target));
         File::copyDirectory($source, $target);

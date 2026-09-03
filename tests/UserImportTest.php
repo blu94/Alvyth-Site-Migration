@@ -44,6 +44,44 @@ class UserImportTest extends TestCase
         );
     }
 
+    /**
+     * A suspension made here is not lifted by a bundle that predates it.
+     *
+     * `volatileFields()` has always kept `status` out of the content hash, with a comment saying
+     * exactly this — but excluding a field from the hash only decides *when* a write happens, never
+     * what the write does. `write()` then filled `status` from the record every time, so the moment
+     * any other field differed, an account this site had suspended came back to life.
+     *
+     * The rename is what makes the record differ. Without it the hash short-circuits before the
+     * write and the test would pass for a reason that has nothing to do with the fix.
+     */
+    #[Test]
+    public function a_suspension_made_here_survives_an_import(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $email = 'suspended-' . bin2hex(random_bytes(3)) . '@example.test';
+
+        $user = User::factory()->create([
+            'email'  => $email,
+            'name'   => 'Before the migration',
+            'status' => 'active',
+        ]);
+
+        // What the bundle carries: the account as it was when it was exported.
+        $record = app(UserDriver::class)->toRecord($user->fresh());
+
+        $user->update(['status' => 'inactive', 'name' => 'Renamed here']);
+
+        app(UserDriver::class)->write($record, $user->fresh());
+
+        $this->assertSame(
+            'inactive',
+            User::where('email', $email)->first()?->status,
+            'An account this site suspended was reactivated by an imported record.'
+        );
+    }
+
     /** An imported account cannot be signed into with the password it had on the source. */
     #[Test]
     public function an_imported_account_cannot_be_signed_into(): void

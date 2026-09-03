@@ -3,6 +3,7 @@
 namespace Plugin\SiteMigration\Backend\Resources;
 
 use App\Models\Plugin;
+use App\Services\Plugin\PluginInstaller;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
@@ -88,7 +89,7 @@ class PluginDriver extends BaseDriver
     /** @param array<string,mixed> $record */
     public function locate(array $record): ?Model
     {
-        $slug = $this->requireKey($record, 'slug', 'plugin');
+        $slug = $this->packageSlug($record, 'plugin');
 
         return Plugin::query()->where('slug', $slug)->first();
     }
@@ -99,7 +100,7 @@ class PluginDriver extends BaseDriver
      */
     public function write(array $record, ?Model $existing): Model
     {
-        $slug = $this->requireKey($record, 'slug', 'plugin');
+        $slug = $this->packageSlug($record, 'plugin');
 
         if ($slug === 'site-migration') {
             throw new SkipRecord('Site Migration does not import itself over the copy that is running.');
@@ -119,28 +120,60 @@ class PluginDriver extends BaseDriver
             ));
         }
 
-        $this->restoreFiles($slug);
+        $source = $this->containedPath($this->bundle?->path . '/plugins', $slug, 'plugin');
 
-        $plugin = $existing ?? new Plugin();
+        if ($this->bundle === null || ! is_dir($source)) {
+            // A row without its files is a registry entry for code that is not there — the exact
+            // objection that kept plugins out of a bundle in the first place. Refused rather than
+            // written, and named, so the operator installs it themselves rather than finding a
+            // dead entry on the Plugins screen.
+            throw new SkipRecord(sprintf(
+                'The bundle carries a record for the "%s" plugin but none of its files, so there '
+                . 'is nothing to install. Install it on this site the ordinary way.',
+                $slug
+            ));
+        }
 
-        $plugin->fill([
-            'slug'         => $slug,
-            'name'         => $record['name'] ?? $slug,
-            'version'      => $record['version'] ?? null,
-            'author'       => $record['author'] ?? null,
-            'reach'        => $record['reach'] ?? null,
-            'licence_type' => $record['licence_type'] ?? 'free',
-        ]);
+        // **Installed by core, not copied by this package.** `installFromDirectory()` is the seam
+        // core factored precisely so a second caller could reuse it, and it does four things a
+        // directory copy does not: it validates the manifest, applies the install-time signature
+        // policy, refuses a package that collides with a core module type or another plugin's, and
+        // keeps a backup it can restore if any of that fails part-way. Writing the tree by hand
+        // meant a bundle could place arbitrary PHP under `storage/app/plugins` with none of those
+        // checks — and `upsertRow()` inside it is also what guarantees the row arrives `disabled`
+        // and that a reinstall does not re-enable something this operator switched off.
+        $result = app(PluginInstaller::class)->installFromDirectory($source);
 
-        // **Arrives disabled, always.** Enabling runs a third party's migrations and registers its
-        // listeners with full application privileges. That is a decision for whoever runs this
-        // site, made deliberately, not a side effect of importing data. A plugin already enabled
-        // here keeps its state — a bundle must not switch off something this site is using.
-        $plugin->status = $existing?->status ?? 'disabled';
+        foreach ((array) ($result['warnings'] ?? []) as $warning) {
+            $this->note((string) $warning);
+        }
 
-        $plugin->save();
+        $plugin = $result['plugin'];
+
+        $this->note(sprintf(
+            'The "%s" plugin arrived disabled, as every installed plugin does. Enabling it runs its '
+            . 'migrations and its code with full application privileges, so that is a decision for '
+            . 'you rather than for a bundle.%s',
+            $slug,
+            ($plugin->licence_type ?? 'free') === 'paid'
+                ? ' It is a paid plugin, and its licence was issued for the site it came from, so it '
+                  . 'needs re-licensing on this domain.'
+                : ''
+        ));
 
         return $plugin;
+    }
+
+    /**
+     * Merging a plugin replaces installed code.
+     *
+     * The strongest case for asking first: what is overwritten is a package the operator installed
+     * and licensed on this domain, and its files execute with full application privileges once
+     * enabled. Consent for that is the overwrite dialog, not a default.
+     */
+    public function mergeReplacesLocalWork(): bool
+    {
+        return true;
     }
 
     /**
@@ -178,24 +211,6 @@ class PluginDriver extends BaseDriver
         File::ensureDirectoryExists(dirname($target));
 
         return File::copyDirectory($source, $target);
-    }
-
-    private function restoreFiles(string $slug): void
-    {
-        if ($this->bundle === null) {
-            return;
-        }
-
-        $source = $this->bundle->path . '/plugins/' . $slug;
-
-        if (! is_dir($source)) {
-            return;
-        }
-
-        $target = storage_path('app/plugins/' . $slug);
-
-        File::ensureDirectoryExists(dirname($target));
-        File::copyDirectory($source, $target);
     }
 
     /** Status and licence state belong to this install, not to the bundle. */

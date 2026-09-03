@@ -347,3 +347,104 @@ Ovynt to clean up. `storage/app/site-migration` survives an uninstall.
 the alternatives are to leave them or to have some other code path delete them — and a plugin that
 deleted an operator's only copy of a bundle on uninstall would be doing something much worse than
 leaving a directory behind. The README says where it is and that removing it is a manual step.
+
+---
+
+## 14. The audit of 2026-09-01, and the seventeen things it found — **FIXED**
+
+A full read of the package against the plugin contract and against ordinary web practice. The
+contract half came back clean: manifest, module routing keys, closed field and `ui.type` sets,
+navigation ownership, permission resource, no migrations, no routes, no provider, `SafeZip` for
+extraction, and a version floor that matches the core it needs. The other half did not, and the
+seventeen findings share one cause worth stating once:
+
+**A bundle's *shape* was validated and its *content* was trusted.** Format version, checksums and
+zip-slip were all checked on the way in; the filenames, package slugs and cipher name *inside* were
+not, and each of those reaches something that acts on it — a filesystem path, an upload, a decrypt.
+
+What changed, grouped by what one change bought:
+
+- **Code is no longer deployed by a data import.** Plugin files now install through
+  `PluginInstaller::installFromDirectory()` — core's own seam, which validates the manifest, applies
+  the signature policy and refuses collisions — instead of a directory copy. Importing a theme or a
+  plugin requires `super_admin`, mirroring the gate `PluginController::store()` states outright;
+  `plugins.create` alone was a way around it, and `SyncPermissions` grants that to every `admin`.
+  The files of the **active** theme are never replaced (its settings and menus still travel, and the
+  run says so). Both are now opt-in rather than part of "everything travels": exclusion is the right
+  default for content, and the opposite is the right default for executable code.
+- **Slugs, filenames and cipher names are input.** Package slugs are validated against core's own
+  pattern and both ends of the copy are `realpath`-contained. Media is allowlisted by extension and
+  checked that the bytes agree with it — core's `AssetRepository::create()` has no allowlist at all,
+  which is filed as **core defect 13**; the guard here should be removed once that lands. The
+  credential vault's cipher is allowlisted to the AEAD mode it writes and its iteration count is
+  clamped at both ends, because `openssl_decrypt()` silently ignores the authentication tag for a
+  non-AEAD cipher.
+- **The overwrite gate now covers what it claimed to.** `mergesOnCollision()` was answering two
+  questions. It still means "a collision is the same thing" — one email is one person, one content
+  hash is one picture — and a second method, `mergeReplacesLocalWork()`, says whether merging
+  replaces something the operator authored *here*. Settings, email templates, themes and plugins
+  answer yes, and without the overwrite acknowledgement their incoming record is left out and named
+  rather than written over the top. The preview reports each resource in its own terms, and both
+  screens say what actually happens.
+- **Progress is recorded only for work that committed.** `savePageData()` wraps a press in one
+  transaction and the state file was never in it, so a deadlock or an execution-time overrun
+  discarded the writes while the cursor advanced past them — and Continue skipped exactly what was
+  lost. `Run::save()` now defers to `DB::afterCommit()`, `RunStore` keeps an identity map so nothing
+  in the request has to read the lagging file, and both filesystem writes are checked.
+- **The run directory is scoped by database**, exactly as core scopes `active-{database}.json`.
+  This is the one that had already cost something: `DB_DATABASE=ovynt_test` changed the database and
+  not the directory, so running this suite the documented way deleted the dev install's bundles and
+  history — the loss §3 refuses to risk. It also removes the multi-site collision before it exists.
+- **Ownership is read, not merely recorded.** `RunStore::find()` and `all()` filter by `user_id`
+  unless the caller is a super admin, and the upload lookup is constrained to this operator's own
+  `MIGRATION_BUNDLE` rows — it previously matched *any* asset by path and then deleted it.
+- **Smaller, and each its own defect.** The rewrite pass read `Asset::path` through the accessor,
+  substituting a URL where a storage path belonged and breaking every rewritten image; a page
+  overwrite orphaned its whole builder subtree because `metas()->delete()` only removes the top
+  level; an imported account's `status` was written despite being documented as local; media
+  matching gave up after fifty unordered candidates; `baseIndexQuery()` returned `null` into a live
+  route; `getOptions()` ignored its `$columns`; two copies of a byte formatter both lost their
+  precision to an `int` cast.
+
+**What the fixes cost in tests.** Nine new tests, and two existing ones changed to encode the new
+contract rather than the old one. Three of the nine exist because the audit found the bug *and* the
+fixture that would have caught it: `RewritePassTest` wrote `{}` as its assets file, so the
+substitution path it was named for never ran.
+
+---
+
+## 15. The three things the audit left open — **TWO FIXED, ONE IS A RELEASE STEP**
+
+Item 14 closed all seventeen findings and left three follow-ups. Two are now done.
+
+**Core defect 13 is fixed, and this package's workaround is gone.** Core's asset pipeline had no
+extension allowlist at all, so the guard this package added in `AssetDriver::upload()` was standing
+in for one. `App\Services\Asset\UploadPolicy` now holds the policy — an allowlist read from
+`config('ovynt.assets.allowed_extensions')` plus a `finfo` check that the bytes agree with the name
+— enforced by `StoreAssetRequest` on the way in over HTTP *and* by `AssetRepository::create()` for
+every caller, including the ones that never saw a request.
+
+`AssetDriver` no longer carries a list. It catches the `ValidationException` core throws and turns
+it into a `SkipRecord`, so a bundle naming a refused type is still reported as *skipped with a
+reason* rather than *failed* — the tally distinction is this package's business, the policy is not.
+Two lists that can disagree was the thing worth avoiding, and the copy is always the one that
+drifts.
+
+One decision inside the core fix matters here: **`zip` had to be on the allowlist.** Theme packages,
+plugin packages and this package's own bundles are all uploaded through that pipeline and handed on
+by `asset_id`. An allowlist covering only media would have read as correct and broken every theme
+deploy and every bundle upload on the install.
+
+**The upgrade step for pre-scoping runs is written down.** §14 moved the run directory to
+`storage/app/site-migration/{database}`, which leaves anything under the old unscoped path invisible
+to every screen. There was nothing to move on the development install — the suite had already
+emptied it, which is what the scoping fixes — but an install that did have runs keeps them and the
+disk they occupy. The README now carries the two-line `mv`, and says why an automatic migration is
+not the answer: it would have to guess which database an unscoped run belonged to, which is exactly
+the question the scoping exists to stop anyone asking.
+
+**Signing is still open, and cannot be closed here.** §6 already covers why: a signature covers
+exact bytes, so it goes stale on the next edit and cannot live in the repository. It needs the
+vendor key at release time. Generating one here to make the item go green would put a signing key in
+a repository, which lets anyone mint packages in the author's name — worse than shipping unsigned,
+and the reason this stays a release step rather than a task.

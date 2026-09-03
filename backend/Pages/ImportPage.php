@@ -3,6 +3,7 @@
 namespace Plugin\SiteMigration\Backend\Pages;
 
 use App\Models\Asset;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Plugin\SiteMigration\Backend\Bundle\BundleReader;
@@ -52,6 +53,9 @@ class ImportPage
      */
     private const ORPHAN_MINUTES = 30;
 
+    /** The usage the upload field declares, and therefore the only rows this screen may claim. */
+    private const UPLOAD_USAGE = 'MIGRATION_BUNDLE';
+
     /** @return array<string,mixed> */
     public function data(): array
     {
@@ -62,6 +66,7 @@ class ImportPage
         return [
             'bundle'         => [],
             'exclude'                => [],
+            'include_code'           => false,
             'on_conflict_overwrite'  => false,
             'overwrite_acknowledged' => false,
             'run_id'       => $run?->id,
@@ -187,9 +192,10 @@ class ImportPage
             fn ($key) => is_string($key) && $this->drivers->has($key)
         ));
 
-        $selection['exclude'] = $excluded;
-        $selection['modules'] = $this->drivers->everythingExcept($excluded);
-        $selection['records'] = [];
+        $selection['exclude']      = $excluded;
+        $selection['include_code'] = (bool) ($data['include_code'] ?? false);
+        $selection['modules']      = $this->drivers->everythingExcept($excluded, $selection['include_code']);
+        $selection['records']      = [];
 
         $run->set('selection', $selection)->save();
 
@@ -257,7 +263,7 @@ class ImportPage
             'modules'     => $this->drivers->everythingExcept(array_values(array_filter(
                 (array) ($data['exclude'] ?? []),
                 fn ($key) => is_string($key) && $this->drivers->has($key)
-            ))),
+            )), (bool) ($data['include_code'] ?? false)),
             'on_conflict' => Collision::KEEP_BOTH,
         ]);
 
@@ -309,6 +315,11 @@ class ImportPage
             fclose($source);
             fclose($out);
         }
+
+        // **The upload is only destroyed once the run owns something usable.** Reading the zip
+        // here rather than after the delete means a file that turns out not to be a bundle costs
+        // the operator nothing: their upload is still on the Assets screen to try again with.
+        BundleReader::peek($target);
 
         try {
             Storage::disk($disk)->delete($relative);
@@ -362,7 +373,7 @@ class ImportPage
         }
 
         if (is_numeric($bundle) && (int) $bundle > 0) {
-            $asset = Asset::find((int) $bundle);
+            $asset = $this->ownUpload()->whereKey((int) $bundle)->first();
 
             if ($asset !== null) {
                 return $asset;
@@ -373,7 +384,10 @@ class ImportPage
             // `latest('id')`: uploading the same filename twice leaves two rows whose paths
             // differ only by the `-1` suffix the asset pipeline adds, and on the exact-match case
             // the newest row is the one the operator just dropped.
-            $asset = Asset::where('path', $this->storageRelative($bundle))->latest('id')->first();
+            $asset = $this->ownUpload()
+                ->where('path', $this->storageRelative($bundle))
+                ->latest('id')
+                ->first();
 
             if ($asset !== null) {
                 return $asset;
@@ -384,6 +398,26 @@ class ImportPage
             'Upload a bundle first — drop the zip the other site produced onto the box above, '
             . 'wait for it to finish uploading, then press Read bundle.'
         );
+    }
+
+    /**
+     * The uploads this operator may claim.
+     *
+     * **Neither half of this used to be constrained, and `claim()` is destructive.** The lookup
+     * matched any row in `assets` by path, and claiming one streams its bytes away, deletes the
+     * file from its disk and deletes the row - so a hand-built POST naming somebody else's asset
+     * path destroyed it, and the "that is not a zip" failure arrived long after the damage.
+     *
+     * The usage is the one the upload field itself declares, so nothing legitimate is excluded,
+     * and the owner is whoever dropped the file. A super admin is not given a pass here: there is
+     * no operational reason to claim another operator's pending upload, and the value of the check
+     * is that it has no exceptions.
+     */
+    private function ownUpload(): \Illuminate\Database\Eloquent\Builder
+    {
+        return Asset::query()
+            ->where('usage', self::UPLOAD_USAGE)
+            ->where('user_id', Auth::id());
     }
 
     /**
@@ -410,8 +444,10 @@ class ImportPage
     private function sweepOrphanedUploads(): void
     {
         try {
-            $orphans = Asset::query()
-                ->where('usage', 'MIGRATION_BUNDLE')
+            // Scoped to this operator, like the claim. Sweeping every operator's abandoned
+            // uploads from whichever screen happened to be opened first is housekeeping reaching
+            // further than it needs to.
+            $orphans = $this->ownUpload()
                 ->where('created_at', '<', now()->subMinutes(self::ORPHAN_MINUTES))
                 ->limit(25)
                 ->get();

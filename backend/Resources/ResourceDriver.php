@@ -117,6 +117,26 @@ interface ResourceDriver
     public function mergesOnCollision(): bool;
 
     /**
+     * Whether merging this resource replaces work the operator did **on this site**.
+     *
+     * **A second question, because `mergesOnCollision()` was answering two.** That flag says a
+     * collision means *the same thing* — one email address is one person, one content hash is one
+     * picture — and for those, merging loses nothing: there was only ever one record to have.
+     *
+     * For four resources it means something else. Settings, email templates, themes and plugins
+     * also merge, because they are singletons or their slug is their directory name and there is
+     * no second copy to keep — but the thing being replaced is the operator's own configuration,
+     * their edited transactional emails, their theme's colours and menus. Merging those without
+     * asking made the import screen's promise — *"nothing already here is replaced unless you turn
+     * overwriting on"* — false for eight of twenty-one resources, and the preview said the
+     * incoming record would be "added alongside under a free name" when it was going to overwrite.
+     *
+     * So a driver answering `true` here is saying: I merge, and merging is destructive to this
+     * site, so do not do it unless the operator has accepted the overwrite confirmation.
+     */
+    public function mergeReplacesLocalWork(): bool;
+
+    /**
      * Write one line.
      *
      * Returns the model written, so the caller can record its id in the run's map. Throwing is
@@ -127,6 +147,22 @@ interface ResourceDriver
      * @param  Model|null  $existing  what `locate()` found, so it is not looked up twice
      */
     public function write(array $record, ?Model $existing): Model;
+
+    /**
+     * Anything the driver did partially, and wants the operator told about.
+     *
+     * **A third outcome, because two were not enough.** A driver could report "placed" by returning
+     * a model or "not placed" by throwing, and nothing in between — so a theme whose row and
+     * settings were imported while its *files* were deliberately left alone (because they are the
+     * ones the live shop is rendering) had no way to say so. Silence there is the worst option: the
+     * operator would find out by noticing the shop looked unchanged.
+     *
+     * Drained by the importer after each record and folded into the run's messages. Returns the
+     * notes and clears them, so one record's note cannot be reported against the next.
+     *
+     * @return array<int,string>
+     */
+    public function takeNotes(): array;
 
     /**
      * Fields excluded from the content hash, beyond the ones every resource excludes.

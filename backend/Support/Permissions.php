@@ -37,6 +37,25 @@ class Permissions
     public const RESOURCE = 'site_migration';
 
     /**
+     * Resources whose import is a **code deployment**, not a data write.
+     *
+     * A theme is Blade and a plugin is PHP; importing either puts a third party's executable files
+     * on this server, where the theme's are also web-served through the `public/themes` symlink and
+     * the plugin's run with full application privileges the moment it is enabled.
+     *
+     * Core already decided what that costs: `PluginController::store()` refuses a plugin install to
+     * anybody but a super administrator, with the comment that installing runs third-party PHP with
+     * full privileges. This package reached the same directories needing only `plugins.create` —
+     * which `SyncPermissions` grants the `admin` role along with every other non-`.delete`
+     * permission — so a migration bundle was a way around a gate core states outright. Mirroring
+     * the gate is the fix; inventing a different answer to a question core has settled would be
+     * the mistake.
+     *
+     * @var array<int,string>
+     */
+    public const CODE_RESOURCES = ['themes', 'plugins'];
+
+    /**
      * Whether the current operator holds a permission.
      *
      * `super_admin` is the standing escape hatch, matching `Helpers::permissionMiddleware()` and
@@ -52,6 +71,17 @@ class Permissions
         }
 
         return $user->hasRole('super_admin') || $user->can($permission);
+    }
+
+    /**
+     * Whether the caller holds the standing escape hatch.
+     *
+     * Named rather than repeated, because it is now asked in two places and the two must not be
+     * able to drift.
+     */
+    public static function isSuperAdmin(): bool
+    {
+        return (bool) Auth::user()?->hasRole('super_admin');
     }
 
     /** May the operator open these screens at all. */
@@ -123,6 +153,19 @@ class Permissions
         self::assertMayRun();
 
         foreach ($resources as $resource) {
+            // Checked before the ordinary verbs, because holding `themes.create` is not the
+            // question being asked here. See {@see CODE_RESOURCES}.
+            if (in_array($resource, self::CODE_RESOURCES, true) && ! self::isSuperAdmin()) {
+                throw new AccessDeniedHttpException(sprintf(
+                    'Importing %s means installing code from the site this bundle came from, which '
+                    . 'only a super administrator may do — the same rule core applies to uploading '
+                    . 'a plugin. Either ask a super administrator to run this import, or untick %s '
+                    . 'and import the rest.',
+                    $resource,
+                    $resource
+                ));
+            }
+
             foreach (self::writeVerbs($resource, $overwriting) as $verb) {
                 if (self::allows($resource . '.' . $verb)) {
                     continue;

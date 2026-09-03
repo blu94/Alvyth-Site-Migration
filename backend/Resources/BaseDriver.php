@@ -127,6 +127,107 @@ abstract class BaseDriver implements ResourceDriver
     }
 
     /**
+     * Most merges are identity merges, and identity merges lose nothing.
+     *
+     * Overridden by the four whose merge replaces something the operator authored here —
+     * `SettingsDriver`, `EmailTemplateDriver`, `ThemeDriver`, `PluginDriver`.
+     */
+    public function mergeReplacesLocalWork(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Notes for the record currently being written.
+     *
+     * @var array<int,string>
+     */
+    private array $notes = [];
+
+    /** Say something about a record that was placed, but not wholly. */
+    protected function note(string $message): void
+    {
+        $this->notes[] = $message;
+    }
+
+    /** @return array<int,string> */
+    public function takeNotes(): array
+    {
+        $notes = $this->notes;
+
+        $this->notes = [];
+
+        return $notes;
+    }
+
+    /**
+     * A package slug out of a bundle, refused unless it is one.
+     *
+     * **The slug becomes a directory name, and it arrives from a file another machine wrote.**
+     * `requireKey()` only guarantees a non-empty string, and both package drivers then concatenated
+     * it into four filesystem paths. A theme record whose slug was `../plugins/{something}` read
+     * from the bundle's own `plugins/` tree and wrote over an installed — possibly enabled —
+     * package, stepping around the version guard, the disabled-on-arrival rule and the refusal to
+     * overwrite this package itself.
+     *
+     * The pattern is core's own, the one `PluginManifest` enforces on every slug it accepts, so a
+     * legitimate package can never fail it. `SkipRecord` rather than a hard failure: the record is
+     * reported and named, and the rest of the bundle still lands.
+     *
+     * @throws SkipRecord
+     */
+    protected function packageSlug(array $record, string $noun): string
+    {
+        $slug = $this->requireKey($record, 'slug', $noun);
+
+        if (preg_match('/^[a-z0-9]+(-[a-z0-9]+)*$/', $slug) !== 1) {
+            throw new SkipRecord(sprintf(
+                'The %s in this bundle is called "%s", which is not a valid slug — a slug is '
+                . 'lowercase letters, digits and single hyphens. It becomes a directory name here, '
+                . 'so it is refused rather than trusted.',
+                $noun,
+                $slug
+            ));
+        }
+
+        return $slug;
+    }
+
+    /**
+     * A path under `$base` that is genuinely under it, resolved.
+     *
+     * The slug is already constrained, so this is the second line rather than the first — but a
+     * symlink inside an extracted bundle can still point a validated name somewhere else, and
+     * `realpath` is what sees that. Mirrors what `SafeZip` does per entry on the way in.
+     *
+     * @throws SkipRecord
+     */
+    protected function containedPath(string $base, string $slug, string $noun): string
+    {
+        $path = $base . '/' . $slug;
+        $real = realpath($path);
+        $root = realpath($base);
+
+        if ($real === false || $root === false) {
+            return $path;
+        }
+
+        $root = rtrim(str_replace('\\', '/', $root), '/') . '/';
+        $real = str_replace('\\', '/', $real);
+
+        if (! str_starts_with($real . '/', $root)) {
+            throw new SkipRecord(sprintf(
+                'The %s "%s" resolves outside %s, so it was not written.',
+                $noun,
+                $slug,
+                $base
+            ));
+        }
+
+        return $path;
+    }
+
+    /**
      * The model this driver writes, taken from its own export query.
      *
      * Derived rather than declared so a driver cannot get the two out of step — the query is

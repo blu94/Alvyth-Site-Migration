@@ -136,6 +136,19 @@ class EmailTemplateDriver extends BaseDriver
     }
 
     /**
+     * Merging replaces wording the operator wrote, so it needs their consent.
+     *
+     * The six templates always exist, so there is never a free name to write a second one under —
+     * but the body being replaced is the shop's own order confirmation, edited by somebody here.
+     * Overwriting that silently is how a migration changes what every customer receives without
+     * anyone deciding to.
+     */
+    public function mergeReplacesLocalWork(): bool
+    {
+        return true;
+    }
+
+    /**
      * There are exactly six templates and each is identified by which message it is. A second
      * "order confirmation" is not a record, it is a bug — nothing would ever send it.
      */

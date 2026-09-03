@@ -340,9 +340,21 @@ class RewritePass
             return [];
         }
 
+        // **`getRawOriginal`, never `pluck('path')`.** `Asset::path` is both a column and an
+        // accessor, and Eloquent's `pluck()` runs get mutators - so this returned a fully qualified
+        // `http://host/storage/...` URL where a storage-relative path was wanted, and the
+        // substitution below then wrote that URL *inside* a string that already carried the source
+        // host: `http://source/storage/http://dest/storage/assets/...`. Every rewritten image in
+        // every builder node, broken, on the main migration path.
+        //
+        // The same trap is documented twice elsewhere in this codebase - `ImportPage::claim()` and
+        // core's `PrivateAssetController` both take the raw value and both say why.
         $local = Asset::query()
             ->whereIn('id', array_values($placed))
-            ->pluck('path', 'id')
+            ->get(['id', 'path'])
+            ->mapWithKeys(static fn (Asset $asset) => [
+                (int) $asset->getKey() => (string) $asset->getRawOriginal('path'),
+            ])
             ->all();
 
         $paths = [];

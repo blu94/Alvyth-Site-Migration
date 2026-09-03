@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\File;
  * Every run this install has performed, as directories under `storage/app/site-migration`.
  *
  * ```
- * storage/app/site-migration/
+ * storage/app/site-migration/ovynt/
  *   20260812-141233-a7f3/
  *     state.json          what the run is, where it got to, what it tallied
  *     bundle.zip          the bundle written (export) or uploaded (import)
@@ -20,6 +20,14 @@ use Illuminate\Support\Facades\File;
  * and, if they opted into record groups, other people's names and addresses. `storage/app` is
  * not web-reachable; `storage/app/public` is. Nothing here is ever written to the latter.
  *
+ * **Scoped by database, exactly as core scopes its own manifests.** `Theme::activeConfigPath()`
+ * and `PluginRegistry::manifestPath()` both end in `active-{database}.json` for a reason this
+ * package needed too: one `storage/app` can be shared by more than one database, and a run is
+ * about the database it walked, not about the directory it happens to sit in. Unscoped, the test
+ * database's runs and the live site's runs were the same set of directories — so the suite's own
+ * teardown deleted an operator's bundles, and two sites under one install would have shown each
+ * other's history.
+ *
  * **Ids are timestamps, not a sequence.** There is no database to hold a counter, and scanning
  * the directory for the highest number and adding one is a race with itself the moment two
  * requests overlap. `Ymd-His` plus four hex characters is unique in practice, sorts
@@ -28,9 +36,43 @@ use Illuminate\Support\Facades\File;
  */
 class RunStore
 {
+    /**
+     * One `Run` object per id, for the life of the request.
+     *
+     * **Not a cache — an identity map, and it is load-bearing.** A run's state is written to disk
+     * only when the surrounding transaction commits ({@see Run::save()}), so between a write and
+     * the commit the file on disk is deliberately behind. Two handles to one run would then
+     * disagree, and the one that re-read from disk would win — which is how a finished export
+     * rendered as still running. Handing back the same object makes that impossible.
+     *
+     * Static because nothing binds this class as a singleton: `app(RunStore::class)` builds a new
+     * instance every time it is called, and several callers do.
+     *
+     * @var array<string,Run>
+     */
+    private static array $live = [];
+
+    /** Drop the identity map. For tests, which run many runs through one process. */
+    public static function forgetLive(): void
+    {
+        self::$live = [];
+    }
+
+    /**
+     * Where this database's runs live.
+     *
+     * The segment is derived exactly as `PluginRegistry::manifestPath()` derives its own, down to
+     * the character class: it is only ever a database identifier, but it becomes a directory name,
+     * so it is constrained rather than trusted.
+     */
     public function root(): string
     {
-        return storage_path('app/site-migration');
+        $connection = (string) config('database.default');
+        $database   = (string) config("database.connections.{$connection}.database");
+
+        $safe = preg_replace('/[^A-Za-z0-9_.-]/', '_', $database) ?: 'default';
+
+        return storage_path('app/site-migration/' . $safe);
     }
 
     /**
@@ -42,7 +84,7 @@ class RunStore
     {
         $id = date('Ymd-His') . '-' . bin2hex(random_bytes(2));
 
-        return Run::make($id, $this->root() . '/' . $id, [
+        return self::$live[$id] = Run::make($id, $this->root() . '/' . $id, [
             'id'         => $id,
             'direction'  => $direction,
             'status'     => Run::STATUS_PENDING,
@@ -60,11 +102,17 @@ class RunStore
     }
 
     /**
-     * One run by id.
+     * One run by id, if it belongs to whoever is asking.
      *
      * The id reaches this from a form field, so it is constrained to the shape `create()` issues
      * rather than trusted. Without that a value of `../../../themes` would resolve to a
      * directory this class would then happily delete.
+     *
+     * **Ownership is checked here rather than on the screens**, because every screen reaches a run
+     * through this method and a check on four call sites is a check somebody will forget on the
+     * fifth. A run is not a shared object: its bundle is an entire site, and publishing a download
+     * link for one, resuming it, or deleting it are all things only the operator who started it
+     * should be doing. A super admin sees everything, which is what makes a stuck run recoverable.
      */
     public function find(?string $id): ?Run
     {
@@ -72,7 +120,39 @@ class RunStore
             return null;
         }
 
-        return Run::load($this->root() . '/' . $id);
+        $run = self::$live[$id] ?? Run::load($this->root() . '/' . $id);
+
+        if ($run === null) {
+            return null;
+        }
+
+        // Checked on the way out, so the identity map cannot be used to step around it.
+        if (! $this->belongsToCaller($run)) {
+            return null;
+        }
+
+        return self::$live[$id] = $run;
+    }
+
+    /**
+     * Whether the current operator may see this run.
+     *
+     * A run written before ownership was recorded, or by a process with no authenticated user
+     * (the console), carries no `user_id`. Those are visible to everybody rather than to nobody:
+     * hiding a run that predates the rule would strand its bundle on the disk with no screen able
+     * to remove it, which is a worse outcome than the one the rule prevents.
+     */
+    private function belongsToCaller(Run $run): bool
+    {
+        $owner  = $run->get('user_id');
+        $caller = Auth::id();
+
+        if ($owner === null || $caller === null) {
+            return true;
+        }
+
+        return (int) $owner === (int) $caller
+            || (bool) Auth::user()?->hasRole('super_admin');
     }
 
     /**
@@ -102,7 +182,8 @@ class RunStore
                 break;
             }
 
-            $run = Run::load($directory);
+            $id  = basename($directory);
+            $run = self::$live[$id] ?? Run::load($directory);
 
             if ($run === null) {
                 continue;
@@ -112,7 +193,13 @@ class RunStore
                 continue;
             }
 
-            $runs[] = $run;
+            // Same rule as `find()`: the History screen lists what the caller may act on, and
+            // `latest()` reads through here, so a Continue button never resumes somebody else's run.
+            if (! $this->belongsToCaller($run)) {
+                continue;
+            }
+
+            $runs[] = self::$live[$id] = $run;
         }
 
         return $runs;
@@ -170,6 +257,8 @@ class RunStore
                 // The **exclusion** is what is remembered, not the resulting inclusion. A version
                 // that added a driver would otherwise replay last week's inclusion list and
                 // silently leave the new resource out of every future export.
+                // `include_code` is deliberately absent: a remembered selection must not be able
+                // to carry somebody else's theme and plugin files into next week's export.
                 'exclude', 'include_media', 'on_conflict',
             ])), JSON_PRETTY_PRINT)
         );
@@ -189,6 +278,8 @@ class RunStore
         if ($run === null) {
             return false;
         }
+
+        unset(self::$live[$run->id]);
 
         return File::deleteDirectory($run->directory);
     }

@@ -2,6 +2,7 @@
 
 namespace Plugin\SiteMigration\Tests;
 
+use App\Models\EmailTemplate;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -191,18 +192,148 @@ class NothingIsDroppedTest extends TestCase
         $this->assertSame(0, $this->reload($run)->tally()['renamed'], 'An account was renamed to dodge a collision.');
     }
 
-    /** The registry offers every driver as excludable, and excluding nothing means everything. */
+    /**
+     * Excluding nothing means every resource that is data.
+     *
+     * **The one exception is code, and it inverts the default deliberately.** Exclusion is the right
+     * model for content: forget to tick something and it travels anyway, which is the safe direction
+     * to fail. For a theme's or a plugin's *files* the safe direction is the opposite one — forget,
+     * and nobody else's code runs on the destination — so those two are asked for rather than
+     * remembered against.
+     */
     #[Test]
-    public function excluding_nothing_exports_everything(): void
+    public function excluding_nothing_exports_every_data_resource(): void
     {
         $registry = app(DriverRegistry::class);
 
-        $this->assertSame($registry->keys(), $registry->everythingExcept([]));
+        $expected = array_values(array_diff($registry->keys(), DriverRegistry::CODE_GROUPS));
+
+        $this->assertSame($expected, $registry->everythingExcept([]));
 
         $this->assertNotContains(
             'products',
             $registry->everythingExcept(['products']),
             'An excluded resource still travelled.'
+        );
+    }
+
+    /** Code travels only when it is asked for, and exclusion still applies on top of that. */
+    #[Test]
+    public function theme_and_plugin_files_are_opt_in(): void
+    {
+        $registry = app(DriverRegistry::class);
+
+        foreach (DriverRegistry::CODE_GROUPS as $key) {
+            $this->assertNotContains(
+                $key,
+                $registry->everythingExcept([]),
+                "{$key} travelled without being asked for."
+            );
+
+            $this->assertContains(
+                $key,
+                $registry->everythingExcept([], includeCode: true),
+                "{$key} did not travel even when it was asked for."
+            );
+        }
+
+        $this->assertSame($registry->keys(), $registry->everythingExcept([], includeCode: true));
+
+        $this->assertNotContains(
+            'themes',
+            $registry->everythingExcept(['themes'], includeCode: true),
+            'An excluded resource travelled because code was opted into.'
+        );
+    }
+
+    /**
+     * The one stated exception to "nothing is dropped", and it is the operator's own work.
+     *
+     * Four resources merge because there is no free name to write a second copy under — settings,
+     * email templates, a theme, a plugin. Merging them replaces something somebody authored *here*,
+     * so it now needs the overwrite acknowledgement like every other replacement. Without it the
+     * incoming record is left out and said so, which is a smaller loss than silently overwriting a
+     * shop's transactional emails while the screen promises nothing will be replaced.
+     */
+    #[Test]
+    public function a_merge_that_replaces_local_work_waits_for_consent(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $registry = app(DriverRegistry::class);
+
+        $guarded = array_values(array_filter(
+            $registry->keys(),
+            fn (string $key) => $registry->for($key)->mergeReplacesLocalWork()
+        ));
+
+        $this->assertSame(
+            ['email_templates', 'settings', 'themes', 'plugins'],
+            $guarded,
+            'The set of resources whose merge replaces the operator\'s own work has changed. If that '
+            . 'is deliberate, the import screen\'s wording has to change with it.'
+        );
+
+        foreach ($guarded as $key) {
+            $this->assertTrue(
+                $registry->for($key)->mergesOnCollision(),
+                "{$key} claims its merge is destructive but does not merge, which cannot both be true."
+            );
+        }
+
+        // The identity merges are the other half of the rule: one email is one person, one content
+        // hash is one file, so those update in place without asking and lose nothing.
+        foreach (['users', 'assets'] as $key) {
+            $this->assertTrue($registry->for($key)->mergesOnCollision());
+            $this->assertFalse(
+                $registry->for($key)->mergeReplacesLocalWork(),
+                "{$key} is an identity merge and must not require consent to place a record."
+            );
+        }
+    }
+
+    /**
+     * And the rule holds end to end, not just in the flags.
+     *
+     * An email template edited here is what the shop's customers actually receive. Before this, a
+     * bundle replaced it on the merge branch with the overwrite switch off and the confirmation
+     * dialog never shown — while the screen promised nothing would be replaced.
+     */
+    #[Test]
+    public function an_edited_email_template_is_not_replaced_without_consent(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $template = EmailTemplate::query()->first();
+
+        if ($template === null) {
+            $this->markTestSkipped('This install has no email templates to protect.');
+        }
+
+        $bundle = $this->export(['email_templates']);
+
+        $mine = 'Edited on this site ' . bin2hex(random_bytes(3));
+        $template->update(['title' => ['en' => $mine]]);
+
+        $run = $this->importRun($bundle, overwrite: false, modules: ['email_templates']);
+        $this->pressUntilDone(fn () => app(Importer::class)->step($this->reload($run)));
+
+        // `title` is a plain array cast, not a Spatie translation — an email template is a `Meta`
+        // row, which is the distinction `BaseDriver::translations()` exists to handle.
+        $after = EmailTemplate::query()->find($template->getKey())?->title;
+
+        $this->assertSame(
+            $mine,
+            is_array($after) ? ($after['en'] ?? null) : $after,
+            'A bundle replaced an email template this site had edited, without the overwrite switch.'
+        );
+
+        $errors = implode(' ', (array) $this->reload($run)->get('errors', []));
+
+        $this->assertStringContainsString(
+            'Overwrite my records when they clash',
+            $errors,
+            'The template was left alone but the run did not say so, which is a silent drop.'
         );
     }
 

@@ -2,10 +2,12 @@
 
 namespace Plugin\SiteMigration\Backend\Repositories;
 
+use App\Models\Meta;
 use Plugin\SiteMigration\Backend\Pages\ExportPage;
 use Plugin\SiteMigration\Backend\Pages\HistoryPage;
 use Plugin\SiteMigration\Backend\Pages\ImportPage;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 /**
  * The module Ovynt resolves for `migration-runs`.
@@ -28,21 +30,33 @@ use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 class MigrationRunRepository
 {
     /**
-     * No list screen, and therefore nothing to paginate.
+     * No list screen, and therefore nothing to list — but a real query builder all the same.
      *
-     * `module.json` declares no `table`, so the engine never asks — but if it ever did, the
-     * contract says a **query builder**, never a collection. There is no model here to build one
-     * from, so this returns null and the caller's `DataTables::eloquent()` fails loudly rather
-     * than this method inventing an empty table that would read as "no runs" forever.
+     * **`GET /admin/modules/migration-runs` is routed whether or not a module declares a `table`.**
+     * This returned `null` on the reasoning that failing loudly beats inventing an empty table, and
+     * the reasoning was sound about tables and wrong about the failure: `DataTables::eloquent(null)`
+     * is a `TypeError`, so the endpoint answered an unhandled 500 rather than a message, and the
+     * repository contract — which says this **must** return a query builder — was simply not kept.
+     *
+     * A query that matches nothing keeps both properties. The screen the engine would render is
+     * empty, which is true: runs are directories, not rows, and the three custom pages are where
+     * they are managed.
      */
     public function baseIndexQuery(array $filters = [])
     {
-        return null;
+        return Meta::query()->whereRaw('1 = 0');
     }
 
+    /**
+     * A run is created by pressing Export or Import, never by a create form.
+     *
+     * `405` rather than `null`: the write routes exist because the engine routes them for every
+     * module, and returning `null` into them produced a success-shaped response for something that
+     * had not happened. Naming the two buttons is the part an operator can act on.
+     */
     public function create(array $data)
     {
-        return null;
+        return $this->refuseWrite();
     }
 
     public function find($id)
@@ -52,12 +66,27 @@ class MigrationRunRepository
 
     public function update($id, array $data)
     {
-        return null;
+        return $this->refuseWrite();
     }
 
+    /**
+     * Removing a run happens on the History screen, which also says what it does and does not undo.
+     */
     public function delete($id)
     {
-        return null;
+        return $this->refuseWrite();
+    }
+
+    /**
+     * @throws MethodNotAllowedHttpException
+     */
+    private function refuseWrite(): never
+    {
+        throw new MethodNotAllowedHttpException(
+            ['GET'],
+            'A migration run is created by pressing Export or Import on this module\'s own screens, '
+            . 'and removed on its History screen. There is no create or edit form for one.'
+        );
     }
 
     /**
@@ -82,14 +111,40 @@ class MigrationRunRepository
     {
         $registry = app(DriverRegistry::class);
 
-        return [
+        // **Only what was asked for.** The contract says the response is keyed by column and that a
+        // repository should answer the columns it knows and ignore the rest; this answered all four
+        // every time, and one of them - `runs` - globs the run directory and reads a `state.json`
+        // per run. So opening the export screen paid for the History screen's answer.
+        //
+        // An empty `$columns` still means "everything": the engine sends none when no field
+        // declares a `master`, and a screen that asked for nothing should not get nothing.
+        $wanted = static fn (string $column) => $columns === [] || in_array($column, $columns, true);
+
+        $out = [];
+
+        if ($wanted('all')) {
             // `all` is what the export screen offers, because its picker asks what to *leave out*
             // and anything movable can be left out.
-            'all'     => $registry->options($registry->keys()),
-            'content' => $registry->options($registry->contentKeys()),
-            'records' => $registry->options($registry->recordKeys()),
-            'runs'    => app(HistoryPage::class)->deleteOptions(),
-        ];
+            $out['all'] = $registry->options($registry->keys());
+        }
+
+        if ($wanted('content')) {
+            $out['content'] = $registry->options($registry->contentKeys());
+        }
+
+        if ($wanted('records')) {
+            $out['records'] = $registry->options($registry->recordKeys());
+        }
+
+        if ($wanted('code')) {
+            $out['code'] = $registry->options($registry->codeKeys());
+        }
+
+        if ($wanted('runs')) {
+            $out['runs'] = app(HistoryPage::class)->deleteOptions();
+        }
+
+        return $out;
     }
 
     /**

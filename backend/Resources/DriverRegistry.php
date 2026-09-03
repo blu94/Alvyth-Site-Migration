@@ -98,6 +98,23 @@ class DriverRegistry
      */
     public const RECORD_GROUPS = ['users', 'orders', 'invoices', 'comments', 'leads'];
 
+    /**
+     * Resources that are **executable code**, not data.
+     *
+     * Themes are Blade and plugins are PHP. Both travel as files, so importing one is installing
+     * software written by whoever built the bundle — and a theme's files are web-served through the
+     * `public/themes` symlink while a plugin's run with full application privileges once enabled.
+     *
+     * Kept out of "everything travels" for that reason alone. The exclusion model is right for
+     * content: forget something and it travels anyway, which is the safe direction to fail. For
+     * code the safe direction is the opposite one — forget, and nobody else's code runs on this
+     * server. So these two are the one set an operator has to ask for, and both screens say what
+     * asking means.
+     *
+     * @var array<int,string>
+     */
+    public const CODE_GROUPS = ['themes', 'plugins'];
+
     /** Resources that are ordinary content, ticked by default. */
     public function contentKeys(): array
     {
@@ -116,11 +133,21 @@ class DriverRegistry
      * @param  array<int,string>  $excluded
      * @return array<int,string>
      */
-    public function everythingExcept(array $excluded): array
+    public function everythingExcept(array $excluded, bool $includeCode = false): array
     {
         $excluded = array_values(array_filter($excluded, 'is_string'));
 
+        if (! $includeCode) {
+            $excluded = array_merge($excluded, self::CODE_GROUPS);
+        }
+
         return array_values(array_diff($this->keys(), $excluded));
+    }
+
+    /** The code packages, for the screens that offer them as a deliberate choice. */
+    public function codeKeys(): array
+    {
+        return array_values(array_intersect($this->keys(), self::CODE_GROUPS));
     }
 
     /** Resources that are records about people, ticked by nobody unless they mean it. */

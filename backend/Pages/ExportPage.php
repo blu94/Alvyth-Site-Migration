@@ -8,6 +8,7 @@ use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Plugin\SiteMigration\Backend\Runs\Run;
 use Plugin\SiteMigration\Backend\Runs\RunStore;
 use Plugin\SiteMigration\Backend\Services\Exporter;
+use Plugin\SiteMigration\Backend\Support\Bytes;
 use Plugin\SiteMigration\Backend\Support\Permissions;
 use RuntimeException;
 
@@ -48,6 +49,10 @@ class ExportPage
         return [
             'exclude'       => $this->remembered($last),
             'include_media' => (bool) ($last['include_media'] ?? true),
+
+            // **Never remembered as on**, for the same reason credentials are not: it is a decision
+            // about running somebody else's code, not a convenience.
+            'include_code'  => false,
 
             // **Never remembered as on.** Every other choice is a convenience; this one is a
             // security decision, and a form that came up pre-ticked would let an operator export
@@ -93,7 +98,10 @@ class ExportPage
                 fn ($key) => is_string($key) && $this->drivers->has($key)
             ));
 
-            $included = $this->drivers->everythingExcept($excluded);
+            // Code packages are asked for, never assumed. See DriverRegistry::CODE_GROUPS.
+            $includeCode = (bool) ($data['include_code'] ?? false);
+
+            $included = $this->drivers->everythingExcept($excluded, $includeCode);
 
             if ($included === []) {
                 return ['message' => 'You have excluded everything, so there would be nothing in the bundle.'];
@@ -110,6 +118,7 @@ class ExportPage
                     || (bool) $data['include_media'],
 
                 'include_credentials' => (bool) ($data['include_credentials'] ?? false),
+                'include_code'        => $includeCode,
             ]);
 
             // Remembered here rather than on completion, so a run the operator abandons still
@@ -260,19 +269,7 @@ class ExportPage
     {
         $bytes = (int) $run->get('bundle_bytes', 0);
 
-        if ($bytes <= 0) {
-            return 'size unknown';
-        }
-
-        foreach (['bytes', 'KB', 'MB', 'GB'] as $unit) {
-            if ($bytes < 1024 || $unit === 'GB') {
-                return ($unit === 'bytes' ? $bytes : round($bytes, 1)) . ' ' . $unit;
-            }
-
-            $bytes = (int) round($bytes / 1024);
-        }
-
-        return 'size unknown';
+        return $bytes <= 0 ? 'size unknown' : Bytes::human($bytes);
     }
 
     private function errors(?Run $run): string

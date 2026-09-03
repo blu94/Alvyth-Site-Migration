@@ -37,12 +37,29 @@ class HistoryPage
             'runs_text'  => $runs === [] ? '' : implode("\n\n", array_map($this->describe(...), $runs)),
             'runs_empty' => $runs === [],
             'runs_count' => count($runs),
-            'storage_at' => 'storage/app/site-migration',
+            // Read from the store rather than restated, because the path is now scoped to the
+            // database and a hard-coded label would send an operator looking in the parent
+            // directory — which is exactly where their runs are not.
+            'storage_at' => $this->storageLabel(),
             'disk_usage'     => $this->diskUsage($runs),
             'delete_id'      => '',
             'delete_options' => $this->deleteOptions($runs),
             'delete_result'  => '',
         ];
+    }
+
+    /**
+     * The run directory, written the way an operator would type it into SFTP.
+     *
+     * Relative to the application root, because an absolute container path (`/var/www/storage/...`)
+     * is not where anybody looking at their hosting will find it.
+     */
+    private function storageLabel(): string
+    {
+        $root = str_replace('\\', '/', $this->runs->root());
+        $base = str_replace('\\', '/', base_path()) . '/';
+
+        return str_starts_with($root, $base) ? substr($root, strlen($base)) : $root;
     }
 
     /**

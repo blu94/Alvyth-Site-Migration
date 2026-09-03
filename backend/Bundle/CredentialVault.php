@@ -51,6 +51,29 @@ class CredentialVault
     private const KDF        = 'sha256';
     private const ITERATIONS = 600000;
     private const CIPHER     = 'aes-256-gcm';
+
+    /**
+     * The ciphers a bundle may ask for.
+     *
+     * One entry, and that is the point: an allowlist of the AEAD mode this package writes. A
+     * manifest naming anything else is refused rather than honoured.
+     *
+     * @var array<int,string>
+     */
+    private const READABLE_CIPHERS = ['aes-256-gcm'];
+
+    /**
+     * The range of iteration counts a bundle may ask for.
+     *
+     * `max()` alone clamped the floor and left the ceiling open, so a manifest could ask for two
+     * billion rounds and hold the request until it timed out - a denial of service written in
+     * JSON. The ceiling is generous enough that a future bundle hardening its KDF still opens
+     * here, and small enough that the worst case is seconds rather than hours.
+     */
+    private const MIN_ITERATIONS = 100000;
+
+    private const MAX_ITERATIONS = 2000000;
+
     private const KEY_BYTES  = 32;
     private const SALT_BYTES = 16;
     private const IV_BYTES   = 12;
@@ -154,6 +177,25 @@ class CredentialVault
         $tag        = substr($blob, self::IV_BYTES, self::TAG_BYTES);
         $ciphertext = substr($blob, self::IV_BYTES + self::TAG_BYTES);
 
+        // **The cipher is policy, not data.** It arrived from `manifest.json` - a plaintext file
+        // inside the same zip as the block it describes - and `openssl_decrypt()` ignores the
+        // authentication tag entirely for any cipher that is not an AEAD mode. So naming
+        // `aes-256-cbc` in a manifest turned the guarantee this class is built on ("a tampered
+        // bundle or a wrong passphrase fails loudly") into an unauthenticated decrypt, one edited
+        // JSON value away. The salt still comes from the manifest, because it genuinely varies per
+        // bundle; the algorithm does not vary and is no longer negotiable.
+        $cipher = (string) ($description['cipher'] ?? self::CIPHER);
+
+        if (! in_array($cipher, self::READABLE_CIPHERS, true)) {
+            throw new RuntimeException(sprintf(
+                'This bundle says its credentials were encrypted with %s, which this version will '
+                . 'not open. Only %s is accepted, because it is the only mode that authenticates '
+                . 'what it decrypts.',
+                $cipher === '' ? 'nothing' : $cipher,
+                self::CIPHER
+            ));
+        }
+
         $key = $this->derive(
             $passphrase,
             $salt,
@@ -162,7 +204,7 @@ class CredentialVault
 
         $plaintext = openssl_decrypt(
             $ciphertext,
-            (string) ($description['cipher'] ?? self::CIPHER),
+            $cipher,
             $key,
             OPENSSL_RAW_DATA,
             $iv,
@@ -248,7 +290,8 @@ class CredentialVault
             self::KDF,
             $passphrase,
             $salt,
-            max(100000, $iterations ?? self::ITERATIONS),
+            // Clamped at both ends. See MAX_ITERATIONS for why the ceiling is not optional.
+            min(self::MAX_ITERATIONS, max(self::MIN_ITERATIONS, $iterations ?? self::ITERATIONS)),
             self::KEY_BYTES,
             true
         );
@@ -274,7 +317,21 @@ class CredentialVault
     private function readers(): array
     {
         return [
-            'payment' => static fn () => app(PaymentInterface::class)->getSettings(),
+            // **Not `getSettings()` for payment either, since core encrypted it (audit S3).**
+            // That accessor now masks gateway secrets the same way mail always masked its
+            // password, so collecting it would seal `••••••••xx` strings under the operator's
+            // passphrase — and the destination's `updateSettings()` treats a mask as "keep
+            // what is stored", so the import would silently write nothing. The runtime
+            // accessor returns the decrypted values; the `method_exists` guard keeps this
+            // package installable on cores older than that change, where `getSettings()`
+            // still returns plaintext.
+            'payment' => static function () {
+                $repo = app(PaymentInterface::class);
+
+                return method_exists($repo, 'getRuntimeSettings')
+                    ? $repo->getRuntimeSettings()
+                    : $repo->getSettings();
+            },
 
             // **Not `getSettings()` for mail.** That accessor deliberately returns a *mask* rather
             // than the password — the form treats blank as "keep the existing one" — so collecting

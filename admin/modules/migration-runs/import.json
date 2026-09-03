@@ -1,11 +1,19 @@
 [
   {
-    "ui": { "type": "section", "icon": "tabler-package-import", "cols": 12, "class": "pa-5" },
+    "ui": {
+      "type": "section",
+      "icon": "tabler-package-import",
+      "cols": 12,
+      "class": "pa-5"
+    },
     "name": "Import a bundle",
-    "subtitle": "Drop the zip the other site produced and press Read bundle. Nothing is written until you press Import, and Preview will tell you exactly what would change before you do.\n\nNothing in the bundle is ever discarded, and nothing already here is replaced unless you turn overwriting on. Every resource is checked against your own permission for it — being allowed to run a migration is not, on its own, permission to rewrite the catalogue. Imported accounts arrive unable to sign in and with no role, and an imported plugin needs re-licensing on this domain.\n\nA large bundle takes more than one press. If it stops part-way the site is partly populated — press Import again to carry on rather than starting over. Re-running is always safe: records are matched on their natural key, so nothing is written twice.",
+    "subtitle": "Drop the zip the other site produced and press Read bundle. Nothing is written until you press Import, and Preview will tell you exactly what would change before you do.\n\nNothing in the bundle is discarded. Records that clash with one already here are added alongside under a free name, unless you turn overwriting on.\n\nFour things cannot sit alongside a second copy — your settings, your email templates, a theme and a plugin. Where one of those clashes, the bundle’s version is LEFT OUT rather than quietly replacing yours; turn overwriting on to bring it in. Accounts and media are the other way round: one email address is one person and one photograph is one file, so those are updated in place.\n\nEvery resource is checked against your own permission for it — being allowed to run a migration is not, on its own, permission to rewrite the catalogue, and importing theme or plugin files is installing code, which only a super administrator may do. Imported accounts arrive unable to sign in and with no role, and an imported plugin arrives disabled and needs re-licensing on this domain.\n\nA large bundle takes more than one press. If it stops part-way the site is partly populated — press Import again to carry on rather than starting over. Re-running is always safe: records are matched on their natural key, so nothing is written twice.",
     "elements": [
       {
-        "ui": { "type": "row", "dense": false },
+        "ui": {
+          "type": "row",
+          "dense": false
+        },
         "elements": [
           {
             "ui": {
@@ -25,7 +33,11 @@
             "hint": "The upload goes straight to private storage — never the public folder — and this screen moves it into the run's own directory when you press Read bundle."
           },
           {
-            "ui": { "type": "field", "cols": 12, "valueClass": "text-body-2" },
+            "ui": {
+              "type": "field",
+              "cols": 12,
+              "valueClass": "text-body-2"
+            },
             "key": "inspection",
             "type": "display",
             "label": "What is in it"
@@ -33,10 +45,19 @@
         ]
       },
       {
-        "ui": { "type": "row", "dense": true },
+        "ui": {
+          "type": "row",
+          "dense": true
+        },
         "elements": [
           {
-            "ui": { "type": "button", "color": "secondary", "variant": "tonal", "icon": "tabler-file-search", "size": "large" },
+            "ui": {
+              "type": "button",
+              "color": "secondary",
+              "variant": "tonal",
+              "icon": "tabler-file-search",
+              "size": "large"
+            },
             "action": "save",
             "endpoint": "/admin/modules/migration-runs/page/import",
             "method": "POST",
@@ -45,22 +66,62 @@
         ]
       },
       {
-        "ui": { "type": "row", "dense": false },
+        "ui": {
+          "type": "row",
+          "dense": false
+        },
         "elements": [
           {
-            "ui": { "type": "field", "cols": 12, "multiple": true, "chips": true, "closableChips": true },
+            "ui": {
+              "type": "field",
+              "cols": 12,
+              "multiple": true,
+              "chips": true,
+              "closableChips": true
+            },
             "key": "exclude",
             "type": "autocomplete",
             "label": "Leave out",
             "placeholder": "Nothing — bring in everything the bundle carries",
             "multiple": true,
             "chips": true,
-            "options": { "url": "/admin/modules/migration-runs/options", "master": "all" },
+            "options": {
+              "url": "/admin/modules/migration-runs/options",
+              "master": "all"
+            },
             "hint": "Everything in the bundle comes in unless you name it here. Anything you leave out has its data file never opened, so narrowing an import is cheaper, not just smaller.",
-            "rules": ["nullable", "array"]
+            "rules": [
+              "nullable",
+              "array"
+            ]
           },
           {
-            "ui": { "type": "field", "cols": { "cols": 12, "md": 6 } },
+            "ui": {
+              "type": "field",
+              "cols": {
+                "cols": 12,
+                "md": 6
+              },
+              "confirm": {
+                "type": "danger",
+                "title": "Carry the theme and plugin files?",
+                "text": "Theme and plugin files are code. Importing them on the other site runs software written by whoever built this bundle — a theme is rendered by the shop and a plugin runs with full application privileges once enabled.\n\nOnly a super administrator can import them, and an imported plugin always arrives disabled. Leave this off unless you are moving a site you control to hosting you control."
+              }
+            },
+            "key": "include_code",
+            "type": "switch",
+            "label": "Include theme and plugin files",
+            "default": false,
+            "hint": "Off by default, and never remembered. Everything else in a bundle is data; this is executable code, so it is the one thing you have to ask for rather than the one thing you have to remember to exclude. A theme’s settings and menus travel either way — this switch is about the files."
+          },
+          {
+            "ui": {
+              "type": "field",
+              "cols": {
+                "cols": 12,
+                "md": 6
+              }
+            },
             "key": "passphrase",
             "type": "password",
             "label": "Passphrase, if the bundle carries credentials",
@@ -70,34 +131,53 @@
           {
             "ui": {
               "type": "field",
-              "cols": { "cols": 12, "md": 6 },
+              "cols": {
+                "cols": 12,
+                "md": 6
+              },
               "confirm": {
                 "type": "danger",
                 "title": "Overwrite this site's own records?",
-                "text": "Where a record in the bundle has the same identity as one already here, the version on THIS site will be replaced by the one in the bundle. That is not reversible — only pages keep a snapshot you can go back to. Leave this off and nothing here is touched: a clashing record is added alongside under a free name, so no data is lost from either site.",
-                "mirror": ["overwrite_acknowledged"]
+                "text": "Where a record in the bundle has the same identity as one already here, the version on THIS site will be replaced by the one in the bundle. That is not reversible — only pages keep a snapshot you can go back to.\n\nThis is also what lets the bundle’s settings, email templates, themes and plugins replace yours; without it they are left out rather than merged over the top.\n\nLeave this off and nothing here is touched: a clashing record is added alongside under a free name, so no data is lost from either site.",
+                "mirror": [
+                  "overwrite_acknowledged"
+                ]
               }
             },
             "key": "on_conflict_overwrite",
             "type": "switch",
             "label": "Overwrite my records when they clash",
             "default": false,
-            "hint": "Off, a record whose identity is already taken here — the same SKU, slug or discount code — is added alongside under a free name, and an invoice or order is renumbered with this site's next number in sequence rather than a suffix (the customer's copy still shows the old number, which is kept on the imported record). On, this site's version is replaced, which also requires permission to update each resource."
+            "hint": "Off, a record whose identity is already taken here — the same SKU, slug or discount code — is added alongside under a free name, and an invoice or order is renumbered with this site’s next number in sequence rather than a suffix (the customer’s copy still shows the old number, which is kept on the imported record). Settings, email templates, themes and plugins have no free name to take, so those are left out entirely until this is on. On, this site’s version is replaced, which also requires permission to update each resource."
           }
         ]
       },
       {
-        "ui": { "type": "row", "dense": true },
+        "ui": {
+          "type": "row",
+          "dense": true
+        },
         "elements": [
           {
-            "ui": { "type": "button", "color": "info", "variant": "tonal", "icon": "tabler-eye", "cols": 6 },
+            "ui": {
+              "type": "button",
+              "color": "info",
+              "variant": "tonal",
+              "icon": "tabler-eye",
+              "cols": 6
+            },
             "action": "save",
             "endpoint": "/admin/modules/migration-runs/page/import-preview",
             "method": "POST",
             "label": "Preview changes"
           },
           {
-            "ui": { "type": "button", "color": "primary", "icon": "tabler-database-import", "cols": 6 },
+            "ui": {
+              "type": "button",
+              "color": "primary",
+              "icon": "tabler-database-import",
+              "cols": 6
+            },
             "action": "save",
             "endpoint": "/admin/modules/migration-runs/page/import-apply",
             "method": "POST",
@@ -106,16 +186,26 @@
         ]
       },
       {
-        "ui": { "type": "row", "dense": false },
+        "ui": {
+          "type": "row",
+          "dense": false
+        },
         "elements": [
           {
-            "ui": { "type": "field", "cols": 12, "valueClass": "text-body-1" },
+            "ui": {
+              "type": "field",
+              "cols": 12,
+              "valueClass": "text-body-1"
+            },
             "key": "progress",
             "type": "display",
             "label": "State"
           },
           {
-            "ui": { "type": "field", "cols": 12 },
+            "ui": {
+              "type": "field",
+              "cols": 12
+            },
             "key": "preview_text",
             "type": "textarea",
             "label": "What would change",
@@ -124,7 +214,10 @@
             "placeholder": "Press Preview to see what this bundle would do."
           },
           {
-            "ui": { "type": "field", "cols": 12 },
+            "ui": {
+              "type": "field",
+              "cols": 12
+            },
             "key": "errors_text",
             "type": "textarea",
             "label": "Messages",

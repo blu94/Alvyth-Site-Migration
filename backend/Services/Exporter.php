@@ -10,6 +10,7 @@ use Plugin\SiteMigration\Backend\Bundle\CredentialVault;
 use Plugin\SiteMigration\Backend\Bundle\Manifest;
 use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Plugin\SiteMigration\Backend\Runs\Run;
+use Plugin\SiteMigration\Backend\Support\Bytes;
 use Plugin\SiteMigration\Backend\Support\Canonical;
 use Plugin\SiteMigration\Backend\Support\Permissions;
 use Plugin\SiteMigration\Backend\Support\StepBudget;
@@ -409,15 +410,7 @@ class Exporter
 
     private function humanBytes(int $bytes): string
     {
-        foreach (['bytes', 'KB', 'MB', 'GB'] as $unit) {
-            if ($bytes < 1024 || $unit === 'GB') {
-                return ($unit === 'bytes' ? $bytes : round($bytes, 1)) . ' ' . $unit;
-            }
-
-            $bytes = (int) round($bytes / 1024);
-        }
-
-        return $bytes . ' bytes';
+        return Bytes::human($bytes);
     }
 
     /**

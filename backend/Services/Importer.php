@@ -4,6 +4,7 @@ namespace Plugin\SiteMigration\Backend\Services;
 
 use App\Services\Seo\SitemapCache;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\File;
 use Plugin\SiteMigration\Backend\Bundle\BundleContext;
 use Plugin\SiteMigration\Backend\Bundle\BundleReader;
 use Plugin\SiteMigration\Backend\Bundle\CredentialVault;
@@ -121,6 +122,12 @@ class Importer
                 'update'      => $update,
                 'unchanged'   => $unchanged,
                 'unplaceable' => $unplaceable,
+
+                // Carried so the preview can say what will actually happen to *this* resource.
+                // A single sentence for all of them was how the preview came to describe a merge
+                // as "added alongside under a free name".
+                'merges'      => $driver->mergesOnCollision(),
+                'guarded'     => $driver->mergeReplacesLocalWork(),
             ];
         }
 
@@ -286,6 +293,27 @@ class Importer
                 }
 
                 if ($driver->mergesOnCollision()) {
+                    // **A merge that replaces the operator's own work needs the overwrite
+                    // acknowledgement, exactly like every other replacement.** Settings, email
+                    // templates, themes and plugins have no free name to be written under, so the
+                    // merge branch used to take them regardless of the switch — which made the
+                    // screen's promise ("nothing already here is replaced unless you turn
+                    // overwriting on") false for them, and made the preview's "added alongside
+                    // under a free name" a description of something else entirely.
+                    //
+                    // Left alone rather than written, and said out loud. This is the one place the
+                    // package declines to place an incoming record, and it is not a silent skip:
+                    // the reason names the resource and the switch that would let it through.
+                    if ($driver->mergeReplacesLocalWork()) {
+                        throw new SkipRecord(sprintf(
+                            'This site already has %s, and bringing the bundle\'s version in would '
+                            . 'replace what is here rather than sit beside it. Nothing was changed. '
+                            . 'Turn on "Overwrite my records when they clash" and import again to '
+                            . 'replace it.',
+                            strtolower($driver->label())
+                        ));
+                    }
+
                     // Where a collision means "the same thing": one email is one person, and
                     // `jane+2@example.com` would be a second account nobody can sign into.
                     $written = $driver->write($record, $existing);
@@ -334,6 +362,13 @@ class Importer
         } catch (Throwable $e) {
             $run->addTally(['failed' => 1])
                 ->addErrors(sprintf('%s line %d: %s', $resource, $line, $e->getMessage()));
+        } finally {
+            // Drained however the record ended, and in a `finally` so a driver that noted something
+            // and *then* threw still gets its note reported. A note is not a failure — it is a
+            // record that was placed, with a part of it deliberately left undone.
+            foreach ($driver->takeNotes() as $note) {
+                $run->addErrors(sprintf('%s line %d: %s', $resource, $line, $note));
+            }
         }
     }
 
@@ -474,6 +509,16 @@ class Importer
 
         $this->applyCredentials($run, $reader);
 
+        // **The unpacked copy goes here, and only here.** `extracted/` is working space that
+        // exists so a paused import can resume without unzipping again; once the run is finished
+        // it is a second, uncompressed copy of every record and every media file in the bundle —
+        // including the encrypted credential block — kept for no reader. The export side has
+        // pruned its equivalent since `OUTSTANDING.md` §3; this is the half that was missed.
+        //
+        // After the credentials, because that is the last thing to read from it. A paused run
+        // keeps its tree, which is what makes Continue cheap.
+        File::deleteDirectory($run->directory . '/extracted');
+
         $tally = $run->tally();
 
         $run->set('status', Run::STATUS_COMPLETED)
@@ -580,9 +625,7 @@ class Importer
                 $row['label'],
                 $row['new'],
                 $row['update'],
-                $overwriting
-                    ? 'will REPLACE what is here'
-                    : 'clash and will be added alongside under a free name',
+                $this->clashWording($row, $overwriting),
                 $row['unchanged'],
                 $row['unplaceable'] ? sprintf(', %d cannot be placed', $row['unplaceable']) : ''
             );
@@ -592,14 +635,71 @@ class Importer
             return 'This bundle carries nothing this site can import.';
         }
 
+        $guarded = array_values(array_filter(
+            $report,
+            static fn (array $row) => ($row['guarded'] ?? false) === true && (int) $row['update'] > 0
+        ));
+
         return 'Nothing has been written yet. ' . implode(' · ', $parts)
             . ($overwriting
                 ? "
 
 Overwriting is ON. Records here will be replaced and that cannot be undone, except for pages."
-                : "
+                : ($guarded === []
+                    ? "
 
-Nothing here will be replaced and nothing in the bundle will be dropped.");
+Nothing here will be replaced and nothing in the bundle will be dropped."
+                    : "
+
+Nothing here will be replaced. " . $this->guardedSentence($guarded)));
+    }
+
+    /**
+     * What will happen to one resource's clashes, in the operator's terms.
+     *
+     * @param  array<string,mixed>  $row
+     */
+    private function clashWording(array $row, bool $overwriting): string
+    {
+        if ($overwriting) {
+            return 'will REPLACE what is here';
+        }
+
+        // A merge that replaces the operator's own work is refused without the switch, so the
+        // preview must say "left alone" and not "added alongside": there is no free name for a
+        // settings group or a theme slug, and pretending otherwise is what made the old wording
+        // describe the opposite of what happened.
+        if (($row['guarded'] ?? false) === true) {
+            return 'clash and will be LEFT ALONE until you turn overwriting on';
+        }
+
+        // An identity merge: one email is one person, one content hash is one picture. There is no
+        // second record to keep, and updating in place loses nothing.
+        if (($row['merges'] ?? false) === true) {
+            return 'are the same records and will be updated in place';
+        }
+
+        return 'clash and will be added alongside under a free name';
+    }
+
+    /**
+     * The sentence naming the resources a non-overwriting import will decline to touch.
+     *
+     * @param  array<int,array<string,mixed>>  $guarded
+     */
+    private function guardedSentence(array $guarded): string
+    {
+        $labels = array_map(static fn (array $row) => strtolower((string) $row['label']), $guarded);
+
+        return sprintf(
+            'Because of that, the %s in this bundle will be left out rather than replacing what is '
+            . 'here — they have no free name to sit alongside under. Turn on overwriting and import '
+            . 'again to bring them in.',
+            implode(' and ', array_filter([
+                implode(', ', array_slice($labels, 0, -1)),
+                end($labels) ?: '',
+            ]))
+        );
     }
 
     private function reader(Run $run): BundleReader

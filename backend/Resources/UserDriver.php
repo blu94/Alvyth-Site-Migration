@@ -97,7 +97,15 @@ class UserDriver extends BaseDriver
             'name'     => $record['name'] ?? $email,
             'email'    => $email,
             'username' => $this->username($record, $email, $existing),
-            'status'   => $record['status'] ?? 'active',
+
+            // **Only on the way in.** `volatileFields()` keeps `status` out of the content hash so
+            // a suspension here does not make an account read as changed - but excluding it from
+            // the comparison only decided when a write happens, not what the write does. The fill
+            // then set it from the bundle every time, so the moment any other field differed, an
+            // account this site had suspended was quietly reactivated by a bundle that predates the
+            // suspension. Suspension is a decision about this install, exactly like the username
+            // and the password beneath it.
+            'status'   => $existing === null ? ($record['status'] ?? 'active') : $existing->status,
         ]);
 
         if ($existing === null) {

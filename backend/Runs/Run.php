@@ -2,8 +2,10 @@
 
 namespace Plugin\SiteMigration\Backend\Runs;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Plugin\SiteMigration\Backend\Resources\Collision;
+use RuntimeException;
 
 /**
  * One export or one import, from the button press to the last record written.
@@ -72,6 +74,9 @@ class Run
      */
     private string $passphrase = '';
 
+    /** Whether a deferred write is already queued on the current transaction. */
+    private bool $writeScheduled = false;
+
     /** @param array<string,mixed> $state */
     private function __construct(
         public readonly string $id,
@@ -129,22 +134,97 @@ class Run
     }
 
     /**
-     * Persist.
+     * Persist — but never ahead of the writes the state describes.
+     *
+     * **A cursor is a promise that the records before it are in the database.** `savePageData()`
+     * wraps every custom-page call in `DB::beginTransaction()`, so one press of Import is a single
+     * transaction; the state file is not in that transaction and cannot be rolled back with it. A
+     * deadlock, a lock-wait timeout or an execution-time overrun therefore discarded the writes
+     * while the file kept the advanced cursor and the `done` flags — and Continue then skipped
+     * exactly the records that were lost, reporting them as written.
+     *
+     * So the write is deferred to the commit that makes it true. Outside a transaction
+     * `DB::afterCommit()` runs the callback immediately, which is what the console and the export
+     * side get; inside one it fires on commit and never on rollback. The in-memory state is
+     * updated regardless, and `RunStore` hands every caller the same object, so nothing in the
+     * request has to read the file to see where the run got to.
+     *
+     * A process that dies mid-step now writes nothing at all: the run keeps the cursor it had, and
+     * the next press redoes a step whose records were never committed. Redoing is free — every
+     * write is an upsert on a natural key, which is the property the whole design rests on.
+     */
+    public function save(): void
+    {
+        if (DB::transactionLevel() === 0) {
+            $this->write();
+
+            return;
+        }
+
+        // One callback per pending cycle, closing over `$this` rather than over a snapshot: what
+        // reaches the disk is the state as it stood at commit, not as it stood at the first
+        // `set()` of the step.
+        if ($this->writeScheduled) {
+            return;
+        }
+
+        $this->writeScheduled = true;
+
+        DB::afterCommit(function (): void {
+            $this->writeScheduled = false;
+            $this->write();
+        });
+
+        DB::afterRollBack(function (): void {
+            // Nothing to undo — the file was never touched. Clearing the flag is what lets a later
+            // step in the same request schedule its own write.
+            $this->writeScheduled = false;
+        });
+    }
+
+    /**
+     * Write the state file.
      *
      * Written to a sibling and renamed, so a step interrupted mid-write leaves the previous
      * state intact rather than a truncated file. `rename` is atomic within a filesystem, and a
      * run whose whole purpose is to survive interruption cannot have a window where its own
      * record of where it got to is unreadable.
+     *
+     * **Both results are checked.** A host that ran out of disk mid-run returned `false` from
+     * `file_put_contents` and carried on, so the run reported progress it had not recorded and the
+     * next press resumed from a cursor that was two steps stale. Failing loudly here is the only
+     * way the operator finds out while it is still one step's worth of work.
      */
-    public function save(): void
+    private function write(): void
     {
         File::ensureDirectoryExists($this->directory);
 
         $path = $this->directory . '/state.json';
         $temp = $path . '.writing';
 
-        file_put_contents($temp, json_encode($this->state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-        rename($temp, $path);
+        $json = json_encode($this->state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        if ($json === false) {
+            throw new RuntimeException(
+                'This run\'s state could not be written as JSON (' . json_last_error_msg() . '), so '
+                . 'where it got to could not be recorded.'
+            );
+        }
+
+        if (file_put_contents($temp, $json) === false) {
+            throw new RuntimeException(
+                'This run\'s state could not be written to ' . $temp . '. The disk may be full or '
+                . 'read-only; nothing further can be recorded until that is fixed.'
+            );
+        }
+
+        if (! rename($temp, $path)) {
+            @unlink($temp);
+
+            throw new RuntimeException(
+                'This run\'s state could not be moved into place at ' . $path . '.'
+            );
+        }
     }
 
     public function get(string $key, mixed $default = null): mixed

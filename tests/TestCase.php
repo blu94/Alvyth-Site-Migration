@@ -76,10 +76,29 @@ abstract class TestCase extends HostTestCase
         return $user->fresh();
     }
 
-    /** Wherever this install keeps its runs, emptied. */
+    /**
+     * This database's runs, emptied.
+     *
+     * **Scoped, and that is the whole point.** `RunStore::root()` now ends in the database name,
+     * so running the suite against `ovynt_test` empties `storage/app/site-migration/ovynt_test`
+     * and cannot reach `.../ovynt`. It used to reach it: the root was unscoped, `DB_DATABASE`
+     * changed the database and not the directory, and so following the documented way to run this
+     * suite deleted the dev install's bundles and history — the exact loss `OUTSTANDING.md` §3
+     * refuses to risk when it declines an automatic retention policy.
+     *
+     * Guarded rather than trusted, because the cost of this being wrong is somebody's only copy of
+     * a site.
+     */
     protected function clearRuns(): void
     {
-        $root = app(RunStore::class)->root();
+        RunStore::forgetLive();
+
+        $root     = app(RunStore::class)->root();
+        $database = (string) config('database.connections.' . config('database.default') . '.database');
+
+        if (! str_ends_with(str_replace('\\', '/', $root), '/' . $database)) {
+            $this->fail("Refusing to empty {$root}: it is not scoped to the {$database} database.");
+        }
 
         if (is_dir($root)) {
             File::deleteDirectory($root);

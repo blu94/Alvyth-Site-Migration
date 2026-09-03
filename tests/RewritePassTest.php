@@ -59,6 +59,58 @@ class RewritePassTest extends TestCase
     }
 
     /**
+     * An image URL is repointed at the file this run actually placed.
+     *
+     * **The half of the pass that had no fixture.** `assets.ndjson` in these tests was the single
+     * line `{}`, so `assetPaths()` always returned an empty map and the path substitution never
+     * ran — which is how `pluck('path')` reading through the `Asset::path` *accessor* survived a
+     * green suite. It returned a fully qualified URL where a storage-relative path was wanted, and
+     * the replacement then wrote that URL inside a string that already carried the source host:
+     * `https://old-shop.example/storage/https://this-site/storage/assets/...`.
+     *
+     * So the assertion is not "the source host is gone" — that passed throughout — but that the
+     * destination host appears exactly once, which is the thing the bug made false.
+     */
+    #[Test]
+    public function an_image_url_is_repointed_at_the_file_this_run_placed(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        [$run, $page, $asset] = $this->pageCarryingAPlacedImage();
+
+        app(RewritePass::class)->run($run, $this->manifest(includeMedia: true), $this->reader($run));
+
+        $body  = $this->blobOf($page);
+        $local = rtrim((string) config('app.url'), '/');
+
+        $this->assertSame(
+            1,
+            substr_count($body, $local),
+            'The rewritten URL names this site more than once, so a URL was substituted into a '
+            . 'string that already carried one. Check that the asset path is read with '
+            . 'getRawOriginal() rather than through the path accessor.'
+        );
+
+        $this->assertStringNotContainsString(
+            self::SOURCE,
+            $body,
+            'The imported page still points at the site it came from.'
+        );
+
+        $this->assertStringContainsString(
+            (string) $asset->getRawOriginal('path'),
+            $body,
+            'The URL was repointed at this site but not at the file this run actually created.'
+        );
+
+        $this->assertStringNotContainsString(
+            'storage/https',
+            $body,
+            'A URL was substituted where a storage path belonged.'
+        );
+    }
+
+    /**
      * Rewriting twice changes nothing the second time.
      *
      * A resumed run re-runs work it has already done, so a substitution that could fire twice would
@@ -187,6 +239,59 @@ class RewritePassTest extends TestCase
         return [$run, $page];
     }
 
+    /**
+     * A page whose builder node points at an image that this run placed under a different path.
+     *
+     * The source path deliberately differs from the local one — a real migration lands a file under
+     * the destination's own year and month — because a substitution that resolved to itself would
+     * pass whether or not the bug was present.
+     *
+     * @return array{0: Run, 1: Page, 2: \App\Models\Asset}
+     */
+    private function pageCarryingAPlacedImage(): array
+    {
+        $sourcePath = 'assets/original/2026/07/hero-' . bin2hex(random_bytes(3)) . '.jpg';
+
+        $asset = \App\Models\Asset::create([
+            'title'  => 'Hero',
+            'usage'  => 'MIGRATION_IMPORT',
+            'path'   => 'assets/original/2026/09/hero-' . bin2hex(random_bytes(3)) . '.jpg',
+            'format' => 'jpg',
+            'size'   => 1234,
+            'disk'   => 'public',
+        ]);
+
+        $slug = 'rewrite-image-' . bin2hex(random_bytes(3));
+
+        $page = Page::create([
+            'title'  => ['en' => 'Rewrite image'],
+            'slug'   => ['en' => $slug],
+            'type'   => 'PAGE',
+            'status' => 'draft',
+        ]);
+
+        $meta = new Meta([
+            'type' => 'SECTION',
+            'data' => ['src' => self::SOURCE . '/storage/' . $sourcePath],
+        ]);
+
+        $meta->metaable_id   = $page->getKey();
+        $meta->metaable_type = $page->getMorphClass();
+        $meta->save();
+
+        $run = app(RunStore::class)->create(Run::DIRECTION_IMPORT, ['modules' => ['pages', 'assets']]);
+
+        $run->idMap()->remember('pages', 1, (int) $page->getKey());
+        $run->idMap()->remember('assets', 7, (int) $asset->getKey());
+
+        $this->writeBundle($run, json_encode([
+            '_source'     => 7,
+            'source_path' => $sourcePath,
+        ]) . "\n");
+
+        return [$run, $page, $asset];
+    }
+
     private function manifest(bool $includeMedia): Manifest
     {
         return Manifest::fromArray([
@@ -198,13 +303,13 @@ class RewritePassTest extends TestCase
     }
 
     /** A minimal bundle on disk, so the pass can read the asset records it needs. */
-    private function writeBundle(Run $run): void
+    private function writeBundle(Run $run, string $assets = "{}\n"): void
     {
         $zip = new ZipArchive();
         $zip->open($run->directory . '/bundle.zip', ZipArchive::CREATE | ZipArchive::OVERWRITE);
         $zip->addFromString('manifest.json', json_encode($this->manifest(true)->toArray()));
         $zip->addFromString('data/pages.ndjson', "{}\n");
-        $zip->addFromString('data/assets.ndjson', "{}\n");
+        $zip->addFromString('data/assets.ndjson', $assets);
         $zip->close();
     }
 

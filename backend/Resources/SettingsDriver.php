@@ -230,6 +230,20 @@ class SettingsDriver extends BaseDriver
     }
 
     /**
+     * Merging replaces the operator's own configuration, so it needs their consent.
+     *
+     * A settings group is a singleton and cannot be kept alongside — but "cannot be duplicated" is
+     * not "may be overwritten silently". Application and localisation settings are the site's name,
+     * its branding and the locales its content renders in; a bundle replacing those without the
+     * operator having accepted the overwrite dialog is the screen's promise broken on the one
+     * resource whose loss is noticed soonest.
+     */
+    public function mergeReplacesLocalWork(): bool
+    {
+        return true;
+    }
+
+    /**
      * A settings group is a singleton.
      *
      * Two `APPLICATION_SETTING` rows is not a thing that can exist, so a collision here means the

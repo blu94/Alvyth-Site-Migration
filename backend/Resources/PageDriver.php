@@ -136,7 +136,18 @@ class PageDriver extends BaseDriver
      */
     private function writeTree(Page $page, array $record): void
     {
-        $page->metas()->delete();
+        // **Depth-first, because there is no cascade.** `$page->metas()` is only the rows whose
+        // `metaable_type` is the page - the ROW level - and every COLUMN and SECTION beneath them
+        // hangs off a `Meta` parent. The migration declares `nullableMorphs` with no foreign key and
+        // the model has no `deleting` hook, so deleting the top level orphaned the whole subtree:
+        // unreachable rows, left behind on every page overwrite, on a package whose main use is a
+        // weekly staging push that rewrites every page.
+        //
+        // Core solves the same problem the same way in `MetaRepository::deleteRecursive()`, which is
+        // `private`, so the recursion is restated here rather than reached for.
+        foreach ($page->metas()->get() as $meta) {
+            $this->deleteMetaTree($meta);
+        }
 
         foreach ((array) ($record['rows'] ?? []) as $index => $row) {
             $this->writeMeta($page, $row, $index);
@@ -145,6 +156,21 @@ class PageDriver extends BaseDriver
         if (is_array($record['seo'] ?? null)) {
             $this->writeMeta($page, $record['seo'], 0);
         }
+    }
+
+    /**
+     * Delete a meta node and everything hanging off it.
+     *
+     * Depth-first: a child's `metaable_id` points at its parent's key, so removing the parent first
+     * is what strands the children.
+     */
+    private function deleteMetaTree(Meta $meta): void
+    {
+        foreach ($meta->children()->get() as $child) {
+            $this->deleteMetaTree($child);
+        }
+
+        $meta->delete();
     }
 
     /**

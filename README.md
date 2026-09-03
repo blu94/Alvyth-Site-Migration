@@ -135,7 +135,7 @@ older.
 
 ### Downloading
 
-The bundle is generated under `storage/app/site-migration/`, off the web. Pressing **Download**
+The bundle is generated under `storage/app/site-migration/{database}/`, off the web. Pressing **Download**
 copies it to the `protected` disk — also off the web — and hands your browser a **signed link that
 expires in minutes**. The copy is removed by your own press, by the sweep on the next screen load,
 and in any case within the hour.
@@ -215,7 +215,7 @@ still work, it would just never skip anything, and nothing would report why.
 This package ships **no migrations and owns no tables**. A run is a directory:
 
 ```
-storage/app/site-migration/20260812-141233-a7f3/
+storage/app/site-migration/{database}/20260812-141233-a7f3/
   state.json           what the run is, where it got to, what it tallied
   bundle.zip           the bundle written or uploaded
   idmap/products.ndjson  where each source id landed here
@@ -224,6 +224,31 @@ storage/app/site-migration/20260812-141233-a7f3/
 Nothing to create on enable, nothing to drop on uninstall, and no schema of ours in a database
 shared with core. The cost is that History is a read-only page rather than a sortable, server-paged
 table — `baseIndexQuery()` must return a query builder, and a directory cannot answer that.
+
+**The path is scoped by database**, the same way core scopes `themes/active-{database}.json` and
+`plugins/active-{database}.json`. One `storage/app` can be shared by more than one database, and a
+run is about the database it walked rather than the directory it happens to sit in. Unscoped, a
+second site would have seen the first site's history — and running this package's own test suite
+against `ovynt_test` emptied the *live* install's runs, because `DB_DATABASE` changed the database
+and not the directory.
+
+### Upgrading from a version before the scoping
+
+If you ran an earlier build, its runs are directly under `storage/app/site-migration/` and are now
+invisible to History, to Export's **Continue** button and to the delete action. They are still on
+disk, and still taking up the space.
+
+Move them into the database-named subdirectory, or delete them if you no longer want the bundles:
+
+```bash
+cd storage/app/site-migration
+mkdir -p ovynt                     # your database name
+mv 2026*-*-* ovynt/ 2>/dev/null || true
+```
+
+This is deliberately not done in code. An automatic migration would have to guess which database an
+unscoped run belonged to — exactly the question the scoping exists to stop anyone having to answer,
+and guessing it wrong would show one site another site's history.
 
 Uninstalling does **not** delete `storage/app/site-migration/`. Remove it by hand if you want the
 bundles gone.

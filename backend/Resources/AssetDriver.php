@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
@@ -117,10 +118,17 @@ class AssetDriver extends BaseDriver
             ));
         }
 
+        // **Ordered, and no longer capped at fifty.** The cap decided identity: where more than
+        // fifty local rows share a byte length and a format - icon sets, generated thumbnails -
+        // the real match could fall outside an unordered window, and the import then created a
+        // duplicate instead of recognising the file. Non-deterministically, so it never reproduced.
+        //
+        // The scan stays cheap in the shape that matters: `hashOf()` reads a file only for rows
+        // that survive the length-and-format narrowing, and caches the answer for the run.
         $candidates = Asset::query()
             ->where('format', $record['format'] ?? null)
             ->where('size', $record['size'] ?? -1)
-            ->limit(50)
+            ->orderBy('id')
             ->get();
 
         foreach ($candidates as $candidate) {
@@ -199,14 +207,28 @@ class AssetDriver extends BaseDriver
             true
         );
 
-        $response = app(AssetInterface::class)->create(
-            $upload,
-            $record['usage'] ?? 'MIGRATION_IMPORT',
-            $record['device'] ?? 'DESKTOP',
-            null,
-            false,
-            false
-        );
+        // **The type check lives in core now, and this only translates its refusal.**
+        // `AssetRepository::create()` applies `UploadPolicy` to every caller, so this package no
+        // longer carries an allowlist of its own — two lists that can disagree is worse than one,
+        // and the one that drifts is always the copy. What is still this package's business is the
+        // *tally*: a bundle naming a file type this site will not store is a record that cannot be
+        // placed, which is `skipped` with a reason, not `failed`.
+        try {
+            $response = app(AssetInterface::class)->create(
+                $upload,
+                $record['usage'] ?? 'MIGRATION_IMPORT',
+                $record['device'] ?? 'DESKTOP',
+                null,
+                false,
+                false
+            );
+        } catch (ValidationException $e) {
+            throw new SkipRecord(sprintf(
+                'The file "%s" was not stored: %s',
+                $record['filename'] ?? 'unnamed',
+                implode(' ', $e->validator->errors()->all())
+            ));
+        }
 
         // `AssetRepository::create()` answers with a JsonResponse, because its first caller was a
         // controller. The id is what matters here; re-implementing the method to avoid unwrapping

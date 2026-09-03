@@ -6,6 +6,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\File;
 use PHPUnit\Framework\Attributes\Test;
 use Plugin\SiteMigration\Backend\Bundle\CredentialVault;
+use Plugin\SiteMigration\Backend\Runs\RunStore;
 use RuntimeException;
 
 require_once __DIR__ . '/autoload.php';
@@ -160,7 +161,7 @@ class CredentialVaultTest extends TestCase
 
     private function tempDir(): string
     {
-        $path = storage_path('app/site-migration/_test/' . bin2hex(random_bytes(4)));
+        $path = app(RunStore::class)->root() . '/_scratch/' . bin2hex(random_bytes(4));
 
         File::ensureDirectoryExists($path);
 
