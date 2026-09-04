@@ -64,6 +64,19 @@ interface ResourceDriver
      * The records to export, as a query so the walk can `chunkById` rather than hydrate a
      * catalogue.
      *
+     * **Drivers read and write models directly, never core's repositories, and that is deliberate.**
+     * A migration walks a table with keyset paging and writes with an explicit column map; a CRUD
+     * repository is shaped for one record at a time from a form, and going through one would cost a
+     * query per row and drop the columns the form does not show.
+     *
+     * The consequence is worth stating where somebody will meet it: **anything moved *into* a
+     * repository write path does not reach a migration import.** Audit rows, cache invalidation, a
+     * slug rule, a derived column — if it lives in `CategoryRepository::create()` rather than in the
+     * model, an imported category will not get it. Whoever moves such behaviour has to check these
+     * drivers too. The settings driver is the one deliberate exception, and its docblock says why:
+     * eight settings keys are `rememberForever`, so writing those through anything but the owning
+     * repository leaves the destination serving stale values indefinitely.
+     *
      * **Must eager-load whatever `toRecord()` reads.** A products export that lazy-loads
      * categories per row turns 4,000 products into 4,001 queries — the shape core already found
      * and fixed once in the activity log.

@@ -167,4 +167,47 @@ class CredentialVaultTest extends TestCase
 
         return $path;
     }
+
+    /**
+     * A configured secret group is never silently absent from the block.
+     *
+     * **This is the test that was missing, and its absence hid a feature that never worked.**
+     * `collect()` treats a group it cannot read as "never configured" and skips it, which is right
+     * for a shop with no gateway and fatal as a safety net: it swallowed a genuine `Error`. The AI
+     * reader called `getSettings()` on `App\Repositories\Ai\AiRepository` — the *per-user assistant*
+     * repository, which has no such method — so the AI key was absent from every bundle ever
+     * written, and no test noticed, because absence is indistinguishable from "not configured"
+     * unless you configure it first.
+     *
+     * So this configures AI, then asserts it arrives with a value a destination could use.
+     */
+    #[Test]
+    public function a_configured_group_is_never_silently_absent(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        app(\App\Repositories\Setting\Ai\AiSettingInterface::class)->updateSettings([
+            'enabled'  => true,
+            'provider' => 'anthropic',
+            'model'    => 'claude-sonnet-4-5',
+            'api_key'  => 'sk-ant-not-a-real-key',
+        ]);
+
+        $groups = app(CredentialVault::class)->collect();
+
+        $this->assertArrayHasKey(
+            'ai',
+            $groups,
+            'The AI group is missing from collect() on a site that has an AI key configured. '
+            . 'collect() swallows the reason, so check the reader resolves a repository that '
+            . 'actually has getSettings()/getRuntimeSettings().'
+        );
+
+        $this->assertSame(
+            'sk-ant-not-a-real-key',
+            $groups['ai']['api_key'] ?? null,
+            'The AI key was collected masked or absent, so a bundle would carry something the '
+            . 'destination cannot use.'
+        );
+    }
 }

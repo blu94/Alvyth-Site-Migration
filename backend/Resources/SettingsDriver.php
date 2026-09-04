@@ -22,7 +22,11 @@ use RuntimeException;
  *   excluded wholesale, because a gateway configuration is mostly credentials and a field-level
  *   allow-list is one forgotten key away from disclosure. The only route out for a secret is the
  *   encrypted block behind a passphrase.
- * - **`AI_ASSISTANT_SETTING` likewise**, for its API key.
+ * - **`AI_SETTING` likewise**, for its API key. (Named `AI_ASSISTANT_SETTING` here until an audit
+ *   checked it against `AiSettingRepository::META_TYPE`: the real type is `AI_SETTING`, so the entry
+ *   matched nothing and the refusal it documents was not being enforced by this list. Harmless in
+ *   practice, because {@see GROUPS} never offered the group either — but a guard that guards nothing
+ *   is worse than no guard, because it reads as protection.)
  * - **`EINVOICE_SETTING` travels with its credential fields removed.** Unlike the other two, most
  *   of it is a *seller identity* — TIN, BRN, SST, MSIC, address — which is genuinely the same
  *   configuration on a rebuilt site and tedious to retype.
@@ -59,7 +63,7 @@ class SettingsDriver extends BaseDriver
     public const NEVER = [
         'PAYMENT_SETTING',
         'MAIL_SETTING',
-        'AI_ASSISTANT_SETTING',
+        'AI_SETTING',
     ];
 
     /**

@@ -2,7 +2,7 @@
 
 namespace Plugin\SiteMigration\Backend\Bundle;
 
-use App\Repositories\Ai\AiRepository;
+use App\Repositories\Setting\Ai\AiSettingInterface;
 use App\Repositories\Setting\Mail\MailInterface;
 use App\Repositories\Setting\Payment\PaymentInterface;
 use Illuminate\Support\Facades\File;
@@ -338,9 +338,42 @@ class CredentialVault
             // it would seal the string `••••••••` under the operator's passphrase and hand the
             // destination a mail configuration that cannot send. The raw row is read and decrypted
             // instead, which is the one place in this package that is allowed to.
-            'mail' => fn () => $this->rawMail(),
+            // **The mail password, through the repository rather than around it.** This used to
+            // read the `metas` row directly and decrypt the password itself, because `getSettings()`
+            // returns a mask and sealing `••••••••` would hand the destination a mail configuration
+            // that cannot send. Core's settings base now offers `getRuntimeSettings()` — the same
+            // seam the payment reader above uses — so the bypass is gone and this package no longer
+            // depends on how core stores a secret, only on it being willing to reveal one.
+            //
+            // The guard keeps the package installable on the cores its manifest still allows
+            // (`>=1.4.0`), where that method does not exist and the raw read is the only way.
+            'mail' => function () {
+                $repo = app(MailInterface::class);
 
-            'ai' => static fn () => app(AiRepository::class)->getSettings(),
+                return method_exists($repo, 'getRuntimeSettings')
+                    ? $repo->getRuntimeSettings()
+                    : $this->rawMail();
+            },
+
+            // **`AiSettingInterface`, not `AiRepository` — and this never worked.**
+            // `App\Repositories\Ai\AiRepository` is the *per-user assistant* repository: its API is
+            // `getForUser()` / `updateForUser()`, and it has no `getSettings()` at all. Calling one
+            // raised an `Error`, which {@see collect()} and {@see apply()} both catch and treat as
+            // "this group was never configured" — so the AI key was silently absent from every
+            // bundle ever written, and silently never applied by any import. The manifest's `groups`
+            // list made that look deliberate.
+            //
+            // The store's own settings live behind `AiSettingInterface` (meta type `AI_SETTING`).
+            // `getRuntimeSettings()` is preferred over the interface's `getCredentials()` because the
+            // latter returns only provider, model and key — writing that back through
+            // `updateSettings()` would drop `enabled` and anything else the row holds.
+            'ai' => static function () {
+                $repo = app(AiSettingInterface::class);
+
+                return method_exists($repo, 'getRuntimeSettings')
+                    ? $repo->getRuntimeSettings()
+                    : $repo->getSettings();
+            },
         ];
     }
 
@@ -352,7 +385,7 @@ class CredentialVault
         return [
             'payment' => static fn (array $v) => app(PaymentInterface::class)->updateSettings($v),
             'mail'    => static fn (array $v) => app(MailInterface::class)->updateSettings($v),
-            'ai'      => static fn (array $v) => app(AiRepository::class)->updateSettings($v),
+            'ai'      => static fn (array $v) => app(AiSettingInterface::class)->updateSettings($v),
         ];
     }
 
