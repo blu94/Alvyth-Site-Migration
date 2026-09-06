@@ -342,4 +342,10 @@ silently. The canonical form was blameless and every other test passed.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+**Free of charge, not open source.** Copyright (c) 2026 Ovynt Labs — see [LICENSE](LICENSE).
+
+You may install and use this plugin on any Ovynt installation you operate, at no cost and with
+no licence key. You may not resell, redistribute or republish it, on its own or bundled with
+anything else. "Free" is the price; the rights stay with Ovynt Labs. How free and paid Ovynt
+packages differ is set out in
+[LICENSING.md](https://github.com/blu94/Ovynt/blob/main/LICENSING.md).
