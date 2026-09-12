@@ -24,7 +24,7 @@ class RunStorageTest extends TestCase
     /**
      * The run directory names the database it belongs to.
      *
-     * `DB_DATABASE=ovynt_test` used to change the database and not the directory, so following the
+     * `DB_DATABASE=alvyth_test` used to change the database and not the directory, so following the
      * documented way to run this suite emptied `storage/app/site-migration` — every bundle and every
      * history entry the dev install had. Core scopes its own manifests the same way and for the same
      * reason; this asserts the package does too.

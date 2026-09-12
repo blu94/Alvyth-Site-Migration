@@ -13,12 +13,12 @@ deliberately.
 ## 1. The manifest declares artwork that does not exist — **FIX**
 
 `plugin.json` names `assets/banner.png` and `assets/thumbnail.png`. There is no `assets/`
-directory. Ovynt ignores a declared path it cannot resolve and falls back to the Tabler icon, so
+directory. Alvyth ignores a declared path it cannot resolve and falls back to the Tabler icon, so
 nothing breaks — but the manifest asserts something untrue, and the next person to read it will go
 looking for files that were never there.
 
 **Resolution.** Remove both declarations. The Tabler icon is a real, deliberate choice rather than
-a placeholder. Ovynt also probes for `banner.{ext}` / `thumbnail.{ext}` at the package root without
+a placeholder. Alvyth also probes for `banner.{ext}` / `thumbnail.{ext}` at the package root without
 any manifest entry, so dropping real artwork in later needs no code change at all — which makes the
 declaration pure liability.
 
@@ -29,7 +29,7 @@ and is covered by the signature, and inventing a design nobody asked for is wors
 
 ## 2. The version floor is lower than what the code actually needs — **FIX**
 
-`requires.ovynt` says `>=1.2.0 <2.0.0`, copied from the specification. **Checked against the core
+`requires.alvyth` says `>=1.2.0 <2.0.0`, copied from the specification. **Checked against the core
 repository rather than assumed**, at the commit that bumped the version to 1.2.0 (`031b8c36`,
 2026-07-15):
 
@@ -77,7 +77,7 @@ quietly deleted one after thirty days would eventually delete exactly the wrong 
 
 **Reversed once, by clicking it.** The delete action was first gated on `site_migration.delete`,
 reasoning that running a migration and tidying up after one are different acts. Pressing the button
-as `tester@ovynt.com` — role `admin` — returned a 403, because core's seeder grants `admin` every
+as `tester@alvyth.com` — role `admin` — returned a 403, because core's seeder grants `admin` every
 permission *except* `.delete`. So the role that actually performs migrations could never reclaim a
 byte of the disk its own bundles were filling, which is the entire problem the action exists to
 solve. A correct-sounding gate that makes the feature unreachable for its only user is worse than
@@ -231,7 +231,7 @@ and was simply unfinished. `AssetRepository::create()` selected a `protected` di
 configure, and `Asset::path()` signed an `assets.view` route that was not registered, so the
 documented mechanism 500'd at one end and threw at the other. Filed as core defect 11 and **fixed
 in core 1.4.0**: the disk exists, the route exists, and the expiry is configurable
-(`ovynt.assets.private_link_minutes`) instead of the five-second literal that would never have
+(`alvyth.assets.private_link_minutes`) instead of the five-second literal that would never have
 worked for a link a human clicks.
 
 **Second answer, now shipped.** `Download::publish()` copies to the `protected` disk and returns
@@ -341,7 +341,7 @@ number on every customer's confirmation email for a problem that mostly cannot o
 ## 13. Uninstalling leaves the run directory behind — **NOTED**
 
 The package owns no database tables, so `uninstall.drop_tables` is absent and there is nothing for
-Ovynt to clean up. `storage/app/site-migration` survives an uninstall.
+Alvyth to clean up. `storage/app/site-migration` survives an uninstall.
 
 **Resolution.** Left as is, and documented. The plugin system offers no uninstall hook for files, so
 the alternatives are to leave them or to have some other code path delete them — and a plugin that
@@ -392,7 +392,7 @@ What changed, grouped by what one change bought:
   lost. `Run::save()` now defers to `DB::afterCommit()`, `RunStore` keeps an identity map so nothing
   in the request has to read the lagging file, and both filesystem writes are checked.
 - **The run directory is scoped by database**, exactly as core scopes `active-{database}.json`.
-  This is the one that had already cost something: `DB_DATABASE=ovynt_test` changed the database and
+  This is the one that had already cost something: `DB_DATABASE=alvyth_test` changed the database and
   not the directory, so running this suite the documented way deleted the dev install's bundles and
   history — the loss §3 refuses to risk. It also removes the multi-site collision before it exists.
 - **Ownership is read, not merely recorded.** `RunStore::find()` and `all()` filter by `user_id`
@@ -420,7 +420,7 @@ Item 14 closed all seventeen findings and left three follow-ups. Two are now don
 **Core defect 13 is fixed, and this package's workaround is gone.** Core's asset pipeline had no
 extension allowlist at all, so the guard this package added in `AssetDriver::upload()` was standing
 in for one. `App\Services\Asset\UploadPolicy` now holds the policy — an allowlist read from
-`config('ovynt.assets.allowed_extensions')` plus a `finfo` check that the bytes agree with the name
+`config('alvyth.assets.allowed_extensions')` plus a `finfo` check that the bytes agree with the name
 — enforced by `StoreAssetRequest` on the way in over HTTP *and* by `AssetRepository::create()` for
 every caller, including the ones that never saw a request.
 

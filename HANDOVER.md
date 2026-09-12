@@ -16,7 +16,7 @@ this package look wrong until you have read the rules that forced them.
 |---|---|
 | [`.agent/SKILL.md`](../../.agent/SKILL.md) | The dispatcher. States that a plugin is not a module and `create-module.md` does **not** apply. |
 | [`.agent/skills/core-identity.md`](../../.agent/skills/core-identity.md) | Global constraints. Vue 3 + Vite, no Nuxt, no Livewire, PowerShell only, verify before claiming. |
-| [`.agent/rules/ovynt.md`](../../.agent/rules/ovynt.md) | Stack and hard prohibitions. |
+| [`.agent/rules/alvyth.md`](../../.agent/rules/alvyth.md) | Stack and hard prohibitions. |
 | [`.agent/rules/code-standards.md`](../../.agent/rules/code-standards.md) | Generate full code, never truncate. Repository pattern. Docs ship with the feature. |
 | [`.agent/rules/no-garbage-files.md`](../../.agent/rules/no-garbage-files.md) | Do not create files nobody asked for. Applies to helper scripts especially. |
 | [`.agent/rules/verification-checkpoint.md`](../../.agent/rules/verification-checkpoint.md) | **Never say "fixed" without executing something.** This package has caught four bugs that way. |
@@ -48,16 +48,16 @@ not by reading. Do the same for anything you add.
 
 ## 1. What this package is
 
-Moves a site's data from one Ovynt install to another. Export a bundle, download it, upload it on
+Moves a site's data from one Alvyth install to another. Export a bundle, download it, upload it on
 the second install, import it. Staging → production; agency template → client site; a shop rebuilt
 on new hosting.
 
-- **Repo:** `git@github.com:blu94/Ovynt-Site-Migration.git`
+- **Repo:** `git@github.com:blu94/Alvyth-Site-Migration.git`
 - **Branch:** `master` — pushed. `git ls-remote --heads origin` is the check; §5.1 has the rest.
   (This line previously said the remote was empty. It was true when written and stale by the time
   anyone read it, which is why §5.1 now names a command instead of asserting a state.)
 - **Slug:** `site-migration` → `Plugin\SiteMigration\`
-- **Requires:** Ovynt `>=1.4.0 <2.0.0` (floor measured, not guessed — see §4.4)
+- **Requires:** Alvyth `>=1.4.0 <2.0.0` (floor measured, not guessed — see §4.4)
 - **Module type:** `migration-runs`, three custom pages: `export`, `import`, `history`
 
 ---
@@ -237,7 +237,7 @@ folder — the only directory nginx serves — is why the download transits it.
 **What is true now.** Core defect 11 is fixed (`CORE-PLUGIN-DEFECTS.md`): there is a `protected`
 disk rooted at `storage/app/protected`, a signed `assets.view` route at `/private-assets/{id}`
 served by `PrivateAssetController`, and a configurable expiry
-(`ovynt.assets.private_link_minutes`, 10 by default) in place of the five-second literal.
+(`alvyth.assets.private_link_minutes`, 10 by default) in place of the five-second literal.
 
 **The workaround is gone.** `Download::publish()` copies the bundle to the `protected` disk and
 returns `$asset->path` — a signed link, re-minted on every screen load because it expires in
@@ -344,7 +344,7 @@ recording it. Re-run that diff whenever core adds a model.
   the package root are picked up with no manifest change; raster only — **SVG is refused**
   (stored XSS against the admin session).
 - **Signing — a release step for the user.** Needs the vendor's private key, which rightly is not
-  on this machine: `php artisan ovynt:plugin-sign <dir> --key=~/keys/vendor-private.pem`, then
+  on this machine: `php artisan alvyth:plugin-sign <dir> --key=~/keys/vendor-private.pem`, then
   zip. Never edit a file afterwards. `plugin.sig` is gitignored deliberately.
 - **`docs/migration-runs.md`** is the in-app operator guide and must be updated in the same change
   as any screen change — that is the project rule, not a follow-up. (Rewritten this session: it
@@ -364,18 +364,18 @@ speed they were wanted for. Building them would also mean a plugin adding an ind
 ### Install and test
 
 ```bash
-# From the Ovynt root. `plugins/` is NOT mounted into the container, so copy first.
+# From the Alvyth root. `plugins/` is NOT mounted into the container, so copy first.
 rm -rf app/storage/app/plugin-src-tmp/site-migration
 cp -r plugins/site-migration app/storage/app/plugin-src-tmp/site-migration
 rm -rf app/storage/app/plugin-src-tmp/site-migration/.git
 
-MSYS_NO_PATHCONV=1 docker exec ovynt_app \
+MSYS_NO_PATHCONV=1 docker exec alvyth_app \
   php artisan plugin:import /var/www/storage/app/plugin-src-tmp/site-migration --enable
 
 # Tests run against the installed copy, in the container.
-MSYS_NO_PATHCONV=1 docker exec -e DB_DATABASE=ovynt_test ovynt_app \
+MSYS_NO_PATHCONV=1 docker exec -e DB_DATABASE=alvyth_test alvyth_app \
   php artisan plugin:import /var/www/storage/app/plugin-src-tmp/site-migration --enable
-MSYS_NO_PATHCONV=1 docker exec ovynt_app \
+MSYS_NO_PATHCONV=1 docker exec alvyth_app \
   php vendor/bin/phpunit storage/app/plugins/site-migration/tests --no-coverage
 ```
 
@@ -390,7 +390,7 @@ MSYS_NO_PATHCONV=1 docker exec ovynt_app \
 3. Progress never updating, because the response carried `message`.
 4. Every resource dropdown empty, because options cannot come from page data.
 
-Log in as **`tester@ovynt.com` / `password`** — never `admin@ovynt.com` (project rule).
+Log in as **`tester@alvyth.com` / `password`** — never `admin@alvyth.com` (project rule).
 URLs: `http://localhost:8090/admin/module/migration-runs/page/{export|import|history}`.
 
 Four harness notes that cost time across sessions:
@@ -409,17 +409,17 @@ Four harness notes that cost time across sessions:
 
 ### After a test run
 
-The suite empties the `plugins` table in `ovynt_test`. If `plugin:import --enable` then fails with a
+The suite empties the `plugins` table in `alvyth_test`. If `plugin:import --enable` then fails with a
 `role_has_permissions` foreign-key error, it is a stale Spatie permission cache, not a defect:
 
 ```bash
-docker exec -e DB_DATABASE=ovynt_test ovynt_app php artisan permission:cache-reset
+docker exec -e DB_DATABASE=alvyth_test alvyth_app php artisan permission:cache-reset
 ```
 
 ### Housekeeping
 
 Clean up after yourself — `app/storage/app/plugin-src-tmp/`, any probe scripts, and
-`app/storage/app/site-migration/` test runs. Run `git status` in the **Ovynt root** as well as the
+`app/storage/app/site-migration/` test runs. Run `git status` in the **Alvyth root** as well as the
 plugin repo; the root has unrelated pre-existing changes that are not yours to commit.
 
 ---

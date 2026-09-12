@@ -1,6 +1,6 @@
 # Site Migration
 
-Site Migration moves the work you have already done from one Ovynt site to another. Everything
+Site Migration moves the work you have already done from one Alvyth site to another. Everything
 travels unless you leave it out, the plugin writes it into a single file, and you import that file
 on the other site.
 
@@ -117,13 +117,13 @@ hour.
 **What is in it** then tells you where the bundle came from and what it holds:
 
 ```
-From: https://staging.example (Ovynt 1.3.0)
+From: https://staging.example (Alvyth 1.3.0)
 Written: 2026-08-12T04:11:09Z
 Contains: 412 products, 19 pages, 2 orders, 1 invoices, 13 comments, 21 leads
 Locales: en, ms
 ```
 
-If the bundle came from a *newer* version of Ovynt than this site runs, it is refused here, before
+If the bundle came from a *newer* version of Alvyth than this site runs, it is refused here, before
 anything is written, and the message names both versions.
 
 ### 2. Choose what to bring in
@@ -277,7 +277,7 @@ Deleting a run does not undo an import. The records it wrote stay exactly where 
 | What you see | What it means |
 |---|---|
 | *That zip has no manifest.json* | The file is not a migration bundle — probably a backup or a theme package. |
-| *This bundle came from Ovynt X and this site runs Y* | The source site is newer. Update this site first. |
+| *This bundle came from Alvyth X and this site runs Y* | The source site is newer. Update this site first. |
 | *The … data in this bundle does not match its checksum* | The file was damaged in transit. Export and re-upload; nothing was written. |
 | *This product has no SKU* | Nothing to match it on. Give it one on the source site. |
 | *You do not have permission to update products* | Overwriting needs that permission as well as the migration one. |

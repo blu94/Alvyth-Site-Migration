@@ -4,7 +4,7 @@
 |--------------------------------------------------------------------------
 | Make this package's classes loadable from its own tests
 |--------------------------------------------------------------------------
-| Ovynt resolves `Plugin\SiteMigration\…` through a runtime autoloader in
+| Alvyth resolves `Plugin\SiteMigration\…` through a runtime autoloader in
 | `PluginServiceProvider`, keyed on the installed set read from the `plugins`
 | table — one of the three independent gates that stop a disabled plugin from
 | running. It is a runtime autoloader rather than a composer PSR-4 entry

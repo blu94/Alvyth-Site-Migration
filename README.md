@@ -1,6 +1,6 @@
 # Site Migration
 
-Move a site's data from one Ovynt install to another. Pick what travels, export a single bundle,
+Move a site's data from one Alvyth install to another. Pick what travels, export a single bundle,
 carry it to a second install running this same plugin, and import it there.
 
 Staging → production. An agency template → a client's site. A shop rebuilt on new hosting.
@@ -32,11 +32,11 @@ There is no third option where something quietly disappears.
 - **It is not a backup tool.** `spatie/laravel-backup` already runs nightly and the updater takes
   a pre-flight dump. A backup restores over an *identical* schema on the *same* install; this
   merges selected data into a *different* install that already has its own. Different problems.
-- **It is not a WordPress importer.** It reads Ovynt bundles only.
+- **It is not a WordPress importer.** It reads Alvyth bundles only.
 - **It is not a spreadsheet importer.** Core already ships that at `/products/import`. That is an
   *authoring* tool and deliberately flattens — variants, images and SEO are not importable there.
   A migration must carry exactly those, so this is a different contract, not a fork.
-- **It is not multi-site.** Ovynt hosts one site per install. "Which website" means which install
+- **It is not multi-site.** Alvyth hosts one site per install. "Which website" means which install
   you carry the bundle to.
 - **It carries no secrets by default.** Gateway keys, the SMTP password and the AI key never enter
   a bundle unless you switch them on, and then only sealed under a passphrase you choose. There is
@@ -130,7 +130,7 @@ filing it under the wrong thing would be worse than reporting it. The preview co
 ## How the bundle gets in and out
 
 **Neither direction touches the public folder.** The file is private from the first byte to the
-last, in both directions — which is why this package requires Ovynt **1.4.0** and refuses anything
+last, in both directions — which is why this package requires Alvyth **1.4.0** and refuses anything
 older.
 
 ### Downloading
@@ -153,7 +153,7 @@ cannot stream a file, and `savePageData` always wraps its return in `response()-
 package endpoint can return bytes — which leaves core's own `Asset` as the only way in or out.
 On 1.3.0 that path was advertised and unfinished: `AssetRepository` selected a `protected` disk
 core did not configure, and `Asset::path()` signed a route named `assets.view` that was not
-registered, so an upload 500'd and a private link threw. Ovynt 1.4.0 finished both ends.
+registered, so an upload 500'd and a private link threw. Alvyth 1.4.0 finished both ends.
 
 Earlier versions of this package worked around it by copying the bundle through the public folder
 under a 64-character random name and sweeping it within the hour. That was the honest answer at the
@@ -229,7 +229,7 @@ table — `baseIndexQuery()` must return a query builder, and a directory cannot
 `plugins/active-{database}.json`. One `storage/app` can be shared by more than one database, and a
 run is about the database it walked rather than the directory it happens to sit in. Unscoped, a
 second site would have seen the first site's history — and running this package's own test suite
-against `ovynt_test` emptied the *live* install's runs, because `DB_DATABASE` changed the database
+against `alvyth_test` emptied the *live* install's runs, because `DB_DATABASE` changed the database
 and not the directory.
 
 ### Upgrading from a version before the scoping
@@ -242,8 +242,8 @@ Move them into the database-named subdirectory, or delete them if you no longer 
 
 ```bash
 cd storage/app/site-migration
-mkdir -p ovynt                     # your database name
-mv 2026*-*-* ovynt/ 2>/dev/null || true
+mkdir -p alvyth                     # your database name
+mv 2026*-*-* alvyth/ 2>/dev/null || true
 ```
 
 This is deliberately not done in code. An automatic migration would have to guess which database an
@@ -273,10 +273,10 @@ signed" warning it would have had unsigned.
 | # | Step | How it is checked |
 |---|---|---|
 | 1 | Working tree clean, everything pushed | `git status --porcelain` empty, `git rev-list --count origin/master..master` = `0` |
-| 2 | Suite green against the installed copy | `docker exec ovynt_app php vendor/bin/phpunit storage/app/plugins/site-migration/tests --no-coverage` |
+| 2 | Suite green against the installed copy | `docker exec alvyth_app php vendor/bin/phpunit storage/app/plugins/site-migration/tests --no-coverage` |
 | 3 | Both wizards driven in a browser | Export, Import and History at `/admin/module/migration-runs/page/{export\|import\|history}` — a green suite has never once caught this package's UI defects |
-| 4 | Version and floor bumped deliberately | `plugin.json` → `version`, and `requires.ovynt` if a new core seam is now called; `PackageManifestTest` asserts the floor |
-| 5 | **Sign**, then **zip**, then stop editing | `php artisan ovynt:plugin-sign /path/to/site-migration --key=~/keys/vendor-private.pem` |
+| 4 | Version and floor bumped deliberately | `plugin.json` → `version`, and `requires.alvyth` if a new core seam is now called; `PackageManifestTest` asserts the floor |
+| 5 | **Sign**, then **zip**, then stop editing | `php artisan alvyth:plugin-sign /path/to/site-migration --key=~/keys/vendor-private.pem` |
 
 `plugin.sig` is `.gitignore`d deliberately: it covers exact bytes and goes stale on the next edit,
 so it is a release artifact rather than a repository state.
@@ -288,7 +288,7 @@ is worse than shipping unsigned.
 ### Artwork — decided: the icon ships
 
 **`tabler-transfer` is the package's mark, not a placeholder awaiting one.** It reads correctly at
-every size Ovynt draws it, it costs nothing to maintain, and it cannot go stale. The manifest
+every size Alvyth draws it, it costs nothing to maintain, and it cannot go stale. The manifest
 declares no image paths, which is the state that matters: it once named `assets/banner.png` and
 `assets/thumbnail.png` against a directory that never existed, and a manifest asserting a file that
 is not there sends the next reader looking for something nobody ever made.
@@ -298,7 +298,7 @@ install and is covered by the release signature, so inventing a design nobody as
 heavier commitment than the icon, not a lighter one.
 
 **Reversing it costs nothing and needs no code change.** Drop `banner.png` (≈1200×300) and
-`thumbnail.png` (≈256×256) at the package root; Ovynt probes for them by name and uses them from
+`thumbnail.png` (≈256×256) at the package root; Alvyth probes for them by name and uses them from
 the next install onwards. **Raster only** — an SVG is refused, because it renders inside an
 authenticated admin session and is a stored-XSS surface.
 
@@ -312,7 +312,7 @@ docker compose exec -T app php artisan plugin:import \
   /var/www/storage/app/plugin-src-tmp/site-migration --enable
 
 # Tests — run inside the container against the installed copy
-docker exec ovynt_app php vendor/bin/phpunit storage/app/plugins/site-migration/tests --no-coverage
+docker exec alvyth_app php vendor/bin/phpunit storage/app/plugins/site-migration/tests --no-coverage
 ```
 
 The tests use `DatabaseTransactions`, never `RefreshDatabase`.
@@ -342,10 +342,10 @@ silently. The canonical form was blameless and every other test passed.
 
 ## Licence
 
-**Free of charge, not open source.** Copyright (c) 2026 Ovynt Labs — see [LICENSE](LICENSE).
+**Free of charge, not open source.** Copyright (c) 2026 Alvyth Labs — see [LICENSE](LICENSE).
 
-You may install and use this plugin on any Ovynt installation you operate, at no cost and with
+You may install and use this plugin on any Alvyth installation you operate, at no cost and with
 no licence key. You may not resell, redistribute or republish it, on its own or bundled with
-anything else. "Free" is the price; the rights stay with Ovynt Labs. How free and paid Ovynt
+anything else. "Free" is the price; the rights stay with Alvyth Labs. How free and paid Alvyth
 packages differ is set out in
-[LICENSING.md](https://github.com/blu94/Ovynt/blob/main/LICENSING.md).
+[LICENSING.md](https://github.com/blu94/Alvyth/blob/main/LICENSING.md).

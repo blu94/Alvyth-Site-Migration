@@ -80,8 +80,8 @@ abstract class TestCase extends HostTestCase
      * This database's runs, emptied.
      *
      * **Scoped, and that is the whole point.** `RunStore::root()` now ends in the database name,
-     * so running the suite against `ovynt_test` empties `storage/app/site-migration/ovynt_test`
-     * and cannot reach `.../ovynt`. It used to reach it: the root was unscoped, `DB_DATABASE`
+     * so running the suite against `alvyth_test` empties `storage/app/site-migration/alvyth_test`
+     * and cannot reach `.../alvyth`. It used to reach it: the root was unscoped, `DB_DATABASE`
      * changed the database and not the directory, and so following the documented way to run this
      * suite deleted the dev install's bundles and history — the exact loss `OUTSTANDING.md` §3
      * refuses to risk when it declines an automatic retention policy.

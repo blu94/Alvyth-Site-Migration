@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\File;
  * Every run this install has performed, as directories under `storage/app/site-migration`.
  *
  * ```
- * storage/app/site-migration/ovynt/
+ * storage/app/site-migration/alvyth/
  *   20260812-141233-a7f3/
  *     state.json          what the run is, where it got to, what it tallied
  *     bundle.zip          the bundle written (export) or uploaded (import)

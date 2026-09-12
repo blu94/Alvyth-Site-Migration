@@ -43,7 +43,7 @@ class Download
      * How long a copy is allowed to exist before it is swept.
      *
      * Longer than the signed link it is fetched with, deliberately: the link expires on its own
-     * (`ovynt.assets.private_link_minutes`, ten by default), and this only has to outlive a slow
+     * (`alvyth.assets.private_link_minutes`, ten by default), and this only has to outlive a slow
      * download of a large bundle on a poor connection.
      */
     private const MINUTES = 60;

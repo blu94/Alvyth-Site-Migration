@@ -506,7 +506,7 @@ class ImportPage
 
         $lines = [
             'From: ' . ($manifest['source']['url'] ?? 'an unnamed site')
-                . ' (Ovynt ' . ($manifest['source']['ovynt'] ?? '?') . ')',
+                . ' (Alvyth ' . ($manifest['source']['alvyth'] ?? '?') . ')',
             'Written: ' . ($manifest['created_at'] ?? '?'),
             'Contains: ' . ($contents === []
                 ? 'nothing'

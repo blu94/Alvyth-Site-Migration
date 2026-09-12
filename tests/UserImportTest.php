@@ -13,7 +13,7 @@ require_once __DIR__ . '/autoload.php';
 /**
  * Accounts arrive without the ability to sign in.
  *
- * Ovynt hashes with bcrypt, so a carried hash *would* verify on the destination — which is exactly
+ * Alvyth hashes with bcrypt, so a carried hash *would* verify on the destination — which is exactly
  * why none is carried. Silently granting a login on a second site to everyone who had one on the
  * first is a security decision the operator was never asked to make, and cannot undo once made.
  */

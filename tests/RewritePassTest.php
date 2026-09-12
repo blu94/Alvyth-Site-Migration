@@ -296,7 +296,7 @@ class RewritePassTest extends TestCase
     {
         return Manifest::fromArray([
             'format'        => 1,
-            'source'        => ['url' => self::SOURCE, 'ovynt' => (string) config('ovynt.version')],
+            'source'        => ['url' => self::SOURCE, 'alvyth' => (string) config('alvyth.version')],
             'contents'      => ['pages' => 1],
             'include_media' => $includeMedia,
         ]);

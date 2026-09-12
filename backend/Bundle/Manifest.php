@@ -17,7 +17,7 @@ use RuntimeException;
  * {
  *   "format": 1,
  *   "created_at": "2026-08-12T04:11:09Z",
- *   "source": { "url": "https://shop.example", "ovynt": "1.3.0", "locales": ["en", "ms"] },
+ *   "source": { "url": "https://shop.example", "alvyth": "1.3.0", "locales": ["en", "ms"] },
  *   "contents": { "products": 412 },
  *   "include_media": false,
  *   "has_credentials": false
@@ -59,7 +59,7 @@ class Manifest
             'created_at' => now()->toIso8601String(),
             'source'     => [
                 'url'     => rtrim((string) config('app.url'), '/'),
-                'ovynt'   => (string) config('ovynt.version'),
+                'alvyth'   => (string) config('alvyth.version'),
                 'locales' => self::locales(),
             ],
             'contents'        => $contents,
@@ -100,7 +100,7 @@ class Manifest
 
     public function sourceVersion(): string
     {
-        return (string) ($this->data['source']['ovynt'] ?? '');
+        return (string) ($this->data['source']['alvyth'] ?? '');
     }
 
     /** @return array<int,string> */
@@ -185,12 +185,12 @@ class Manifest
             ));
         }
 
-        $here   = (string) config('ovynt.version');
+        $here   = (string) config('alvyth.version');
         $source = $this->sourceVersion();
 
         if ($source !== '' && version_compare($source, $here, '>')) {
             throw new RuntimeException(sprintf(
-                'This bundle came from Ovynt %s and this site runs %s. Importing it could reference '
+                'This bundle came from Alvyth %s and this site runs %s. Importing it could reference '
                 . 'fields this version does not have. Update this site to %s or newer first.',
                 $source,
                 $here,

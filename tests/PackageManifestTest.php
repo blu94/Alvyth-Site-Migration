@@ -11,7 +11,7 @@ require_once __DIR__ . '/autoload.php';
 /**
  * The claims `plugin.json` makes that this package cannot survive being wrong about.
  *
- * Three of these are values Ovynt refuses at install, and they are the ones plugin authors get
+ * Three of these are values Alvyth refuses at install, and they are the ones plugin authors get
  * wrong — but the reason to assert them here rather than trust the installer is that two of them
  * fail *silently at the wrong layer*: a wrong `routeBase` gives a list screen that loads and an
  * Add button that 404s, and a pipe-delimited `rules` string is valid Laravel and is therefore
@@ -69,7 +69,7 @@ class PackageManifestTest extends TestCase
         $this->assertFalse($manifest->satisfiedBy('1.3.9'));
 
         $this->assertTrue($manifest->satisfiedBy('1.4.0'));
-        $this->assertTrue($manifest->satisfiedBy((string) config('ovynt.version')));
+        $this->assertTrue($manifest->satisfiedBy((string) config('alvyth.version')));
 
         // A 2.x core is a different contract, and installing into one unread is how a package
         // breaks quietly.
@@ -148,7 +148,7 @@ class PackageManifestTest extends TestCase
     /**
      * The manifest declares no artwork it does not ship.
      *
-     * Ovynt ignores a path it cannot resolve and falls back to the Tabler icon, so a wrong entry
+     * Alvyth ignores a path it cannot resolve and falls back to the Tabler icon, so a wrong entry
      * breaks nothing — it just asserts something untrue, and sends the next reader looking for
      * files that were never there. Real artwork dropped at the package root is picked up without
      * any manifest entry at all.

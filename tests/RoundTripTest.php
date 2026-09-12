@@ -182,7 +182,7 @@ class RoundTripTest extends TestCase
         $this->assertContains('checksums.json', $names);
 
         $this->assertSame(1, $manifest['format']);
-        $this->assertSame((string) config('ovynt.version'), $manifest['source']['ovynt']);
+        $this->assertSame((string) config('alvyth.version'), $manifest['source']['alvyth']);
         $this->assertSame(2, $manifest['contents']['products']);
     }
 

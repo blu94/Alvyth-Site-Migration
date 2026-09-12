@@ -23,13 +23,13 @@ class BundleFormatTest extends TestCase
 {
     use DatabaseTransactions;
 
-    /** A bundle from a newer Ovynt is refused, with both versions named. */
+    /** A bundle from a newer Alvyth is refused, with both versions named. */
     #[Test]
-    public function a_bundle_from_a_newer_ovynt_is_refused(): void
+    public function a_bundle_from_a_newer_alvyth_is_refused(): void
     {
         $manifest = Manifest::fromArray([
             'format' => 1,
-            'source' => ['ovynt' => '99.0.0', 'url' => 'https://newer.example'],
+            'source' => ['alvyth' => '99.0.0', 'url' => 'https://newer.example'],
         ]);
 
         $this->expectException(RuntimeException::class);
@@ -39,18 +39,18 @@ class BundleFormatTest extends TestCase
     }
 
     /**
-     * A bundle from an older Ovynt is accepted.
+     * A bundle from an older Alvyth is accepted.
      *
      * The asymmetry is not caution, it is what the two cases mean: fields absent from an older
      * bundle take their column defaults, which is well defined. Fields present in a newer one may
      * name columns that do not exist here.
      */
     #[Test]
-    public function a_bundle_from_an_older_ovynt_is_accepted(): void
+    public function a_bundle_from_an_older_alvyth_is_accepted(): void
     {
         $manifest = Manifest::fromArray([
             'format' => 1,
-            'source' => ['ovynt' => '1.0.0', 'url' => 'https://older.example'],
+            'source' => ['alvyth' => '1.0.0', 'url' => 'https://older.example'],
         ]);
 
         $manifest->assertReadable();

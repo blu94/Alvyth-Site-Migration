@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
  * reason, and the screen states the hazard rather than burying it in a manual: **a bundle with
  * accounts in it is a personal-data export the moment it leaves the building.**
  *
- * **Passwords travel or they do not, and both are wrong.** Ovynt hashes with bcrypt, so a carried
+ * **Passwords travel or they do not, and both are wrong.** Alvyth hashes with bcrypt, so a carried
  * hash *would* verify on the destination — which is worse than it sounds. Silently granting a
  * login on a second site to everyone who had one on the first is a security decision the operator
  * has not been asked to make, and one they cannot undo once made. So **users import with an

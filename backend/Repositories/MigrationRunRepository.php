@@ -10,7 +10,7 @@ use Plugin\SiteMigration\Backend\Resources\DriverRegistry;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 /**
- * The module Ovynt resolves for `migration-runs`.
+ * The module Alvyth resolves for `migration-runs`.
  *
  * **The class name is derived, not chosen.** `GenericModuleController` takes the module type,
  * singularises and studly-cases it — `migration-runs` → `migration-run` → `MigrationRun` — and
@@ -19,7 +19,7 @@ use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
  * appears in a class name, so the two senses of the word cannot be confused) has to give way, and
  * it gives way because the engine decides this one, not the author.
  *
- * There is no base class and no interface — Ovynt resolves this by name and calls the methods
+ * There is no base class and no interface — Alvyth resolves this by name and calls the methods
  * below.
  *
  * The CRUD half is deliberately inert. This module ships no `table` and no `form`: it exists to
