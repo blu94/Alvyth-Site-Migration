@@ -6,3 +6,7 @@ plugin.sig
 Thumbs.db
 
 .playwright-mcp/
+
+# Graphify knowledge graph. Regenerated locally from source by
+# `graphify update .`; never a source of truth, and large.
+/graphify-out
